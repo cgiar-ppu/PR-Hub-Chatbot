@@ -12,6 +12,170 @@ from docx import Document as DocxDocument
 from pptx import Presentation
 from openai import OpenAI
 
+# --- Tema CGIAR ---------------------------------------------------------------
+import html  # para escapar texto en chips
+
+CGIAR_COLORS = {
+    "green_primary": "#427730",      # Corporate Green
+    "green_leaf": "#7AB800",         # Leaf green
+    "green_leaf_dark": "#739600",    # Darker leaf green
+    "blue_bright": "#0065BD",        # Bright Blue
+    "blue_medium": "#0039A6",        # Medium Blue
+    "yellow": "#FDC82F",             # Yellow
+    "orange": "#E37222",             # Orange
+    "bg": "#F7FAF8",                 # Fondo claro suave
+    "panel": "#FFFFFF",              # Tarjetas
+    "text": "#1A202C",               # Texto principal
+    "muted": "#4A5568",              # Texto secundario
+    "border": "#E2E8F0",             # Bordes sutiles
+}
+
+def apply_cgiar_theme():
+    st.markdown(f"""
+    <style>
+        /* Tipografía */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        :root {{
+            --brand-primary: {CGIAR_COLORS["green_primary"]};
+            --brand-primary-strong: {CGIAR_COLORS["green_leaf_dark"]};
+            --brand-accent: {CGIAR_COLORS["green_leaf"]};
+            --brand-blue: {CGIAR_COLORS["blue_bright"]};
+            --brand-blue-strong: {CGIAR_COLORS["blue_medium"]};
+            --brand-yellow: {CGIAR_COLORS["yellow"]};
+            --brand-orange: {CGIAR_COLORS["orange"]};
+
+            --bg: {CGIAR_COLORS["bg"]};
+            --panel: {CGIAR_COLORS["panel"]};
+            --text: {CGIAR_COLORS["text"]};
+            --muted: {CGIAR_COLORS["muted"]};
+            --border: {CGIAR_COLORS["border"]};
+        }}
+
+        .stApp {{
+            font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }}
+        #MainMenu {{ display: none; }}
+        footer {{ visibility: hidden; }}
+
+        /* Contenedor principal */
+        .main .block-container {{
+            max-width: 1100px;
+            padding-top: 1.25rem;
+        }}
+
+        /* Hero */
+        .brand-hero {{
+            background: linear-gradient(90deg, var(--brand-primary) 0%, var(--brand-primary-strong) 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 1.25rem 1.25rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }}
+        .brand-hero h1 {{
+            margin: 0 0 .25rem 0;
+            font-weight: 700;
+            letter-spacing: .2px;
+        }}
+        .brand-hero p {{
+            margin: 0;
+            opacity: .95;
+        }}
+
+        /* Tarjetas */
+        .card {{
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            margin: .75rem 0;
+        }}
+        .answer-card {{
+            border-left: 4px solid var(--brand-primary);
+        }}
+
+        /* Chips de fuentes */
+        .sources-wrap {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: .5rem;
+            margin-top: .5rem;
+        }}
+        .source-chip {{
+            background: #f2f7f3;
+            border: 1px solid #e1efe4;
+            color: #0f3b1f;
+            border-radius: 999px;
+            padding: .35rem .75rem;
+            font-size: .85rem;
+            line-height: 1;
+            white-space: nowrap;
+        }}
+
+        /* Botones */
+        .stButton > button {{
+            width: 100%;
+            border: 0;
+            border-radius: 10px;
+            font-weight: 600;
+            padding: .65rem 1rem;
+            transition: transform .08s ease, opacity .15s ease, box-shadow .2s ease;
+            background: var(--brand-primary);
+            color: #fff;
+            box-shadow: 0 2px 6px rgba(66,119,48,.20);
+        }}
+        .stButton > button:hover {{
+            opacity: .95;
+            box-shadow: 0 4px 10px rgba(66,119,48,.25);
+            transform: translateY(-1px);
+        }}
+        .stButton > button:active {{
+            transform: translateY(1px);
+            box-shadow: inset 0 2px 4px rgba(0,0,0,.08);
+        }}
+
+        /* Inputs */
+        .stTextInput > div > div > input {{
+            border-radius: 10px !important;
+            border: 1px solid var(--border) !important;
+            box-shadow: none !important;
+        }}
+        .stTextInput > div > div > input:focus {{
+            border-color: var(--brand-primary) !important;
+            outline: 3px solid rgba(66,119,48,.15) !important;
+        }}
+
+        /* Slider */
+        .stSlider [data-baseweb="slider"] > div:first-child {{
+            color: var(--brand-primary);
+        }}
+
+        /* Alertas sutiles */
+        .stAlert {{
+            border-left: 4px solid var(--brand-accent);
+        }}
+
+        /* Métricas compactas */
+        .metric-row > div > div {{
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: .75rem;
+        }}
+
+        /* Footer simple */
+        .app-footer {{
+            text-align: center;
+            color: var(--muted);
+            font-size: .9rem;
+            margin: 1rem 0 2rem;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
 
 @dataclass
 class Chunk:
@@ -141,18 +305,38 @@ def read_pptx_chunks(path: str) -> List[Chunk]:
 def load_corpus(root_dir: str) -> List[Chunk]:
     supported_ext = {".pdf", ".docx", ".pptx"}
     chunks: List[Chunk] = []
-    for dirpath, _, filenames in os.walk(root_dir):
-        for fname in filenames:
-            ext = os.path.splitext(fname)[1].lower()
-            if ext not in supported_ext:
-                continue
-            abspath = os.path.join(dirpath, fname)
-            if ext == ".pdf":
-                chunks.extend(read_pdf_chunks(abspath))
-            elif ext == ".docx":
-                chunks.extend(read_docx_chunks(abspath))
-            elif ext == ".pptx":
-                chunks.extend(read_pptx_chunks(abspath))
+    processed_files = set()
+    
+    with st.expander("🔍 View document processing details", expanded=False):
+        st.write("### Processing files:")
+        for dirpath, _, filenames in os.walk(root_dir):
+            for fname in filenames:
+                ext = os.path.splitext(fname)[1].lower()
+                if ext not in supported_ext:
+                    continue
+                abspath = os.path.join(dirpath, fname)
+                st.write(f"📄 Loading: {fname}")
+                
+                new_chunks = []
+                if ext == ".pdf":
+                    new_chunks = read_pdf_chunks(abspath)
+                elif ext == ".docx":
+                    new_chunks = read_docx_chunks(abspath)
+                elif ext == ".pptx":
+                    new_chunks = read_pptx_chunks(abspath)
+                    
+                if new_chunks:
+                    chunks.extend(new_chunks)
+                    processed_files.add(fname)
+                    st.write(f"✅ Successfully loaded: {fname} ({len(new_chunks)} chunks)")
+                else:
+                    st.write(f"❌ Failed to load: {fname}")
+        
+        st.write(f"\n### Summary:")
+        st.write(f"Successfully loaded {len(processed_files)} files:")
+        for file in sorted(processed_files):
+            st.write(f"- {file}")
+    
     return chunks
 
 
@@ -348,22 +532,69 @@ def dedupe_preserve_order(items: List[str], limit: int = 5) -> List[str]:
             break
     return out
 
+def render_sources_pills(lines):
+    if not lines:
+        st.markdown("<div class='sources-wrap'><span class='source-chip'>not specified</span></div>", unsafe_allow_html=True)
+        return
+    pills = "".join(f"<span class='source-chip'>{html.escape(line)}</span>" for line in lines)
+    st.markdown(f"<div class='sources-wrap'>{pills}</div>", unsafe_allow_html=True)
 
 def render_app() -> None:
-    st.set_page_config(page_title="H&R Hub - RAG", layout="centered")
-    st.title("H&R Hub — Document-grounded RAG assistant")
-    st.caption(
-        "Answers strictly based on the documents in this project. "
-        "Always include the 'Sources' section."
-    )
+    st.set_page_config(page_title="H&R Hub — RAG (CGIAR)", page_icon="🌿", layout="centered")
+    apply_cgiar_theme()
+
+    # Cabecera tipo hero
+    st.markdown("""
+        <div class="brand-hero">
+            <h1>H&R Hub — Document‑grounded RAG assistant</h1>
+            <p>Answers strictly based on the documents in this project. Always include the <strong>Sources</strong> section.</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Sidebar: guía rápida y ejemplos
+    with st.sidebar:
+        st.markdown("### ℹ️ Quick help")
+        st.write("- Coloca tus **PDF/DOCX/PPTX** en el proyecto.")
+        st.write("- Escribe una pregunta concreta.")
+        st.write("- Ajusta el número de chunks si necesitas más/menos contexto.")
+        st.markdown("---")
+        st.markdown("**Ejemplos**")
+        st.caption("• HR policy on remote work eligibility\n• Recruitment process steps timeline\n• Benefits entitlements for consultants")
+        st.markdown("---")
+        st.caption("Colors follow CGIAR guidelines (Corporate Green + supporting palette).")
 
     project_root = os.path.dirname(os.path.abspath(__file__))
     with st.spinner("Loading documents and building index…"):
         chunks = load_corpus(project_root)
         vectorizer, matrix = build_index(chunks)
+
     num_docs = len({c.source_path for c in chunks})
     num_chunks = len(chunks)
-    st.write(f"Loaded documents: {num_docs} · Indexed chunks: {num_chunks}")
+
+    # Métricas como tarjetas
+    cols = st.columns(2, gap="small")
+
+    with cols[0]:
+        st.markdown(f"""
+        <div class="card" style="display:flex;align-items:center;gap:.65rem">
+        <span style="font-size:1.35rem">📄</span>
+        <div>
+            <div style="font-size:.8rem;color:var(--muted)">Loaded documents</div>
+            <div style="font-weight:700">{num_docs}</div>
+        </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with cols[1]:
+        st.markdown(f"""
+        <div class="card" style="display:flex;align-items:center;gap:.65rem">
+        <span style="font-size:1.35rem">🧩</span>
+        <div>
+            <div style="font-size:.8rem;color:var(--muted)">Indexed chunks</div>
+            <div style="font-weight:700">{num_chunks}</div>
+        </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     if num_chunks == 0:
         st.warning(
@@ -371,31 +602,48 @@ def render_app() -> None:
             "Add files to the existing folders and reload."
         )
 
-    query = st.text_input("Type your question:", value="")
-    top_k = st.slider("Number of chunks to consider", min_value=20, max_value=30, value=25)
+    # Área de búsqueda como formulario (Enter envía)
+    with st.form("ask_form", clear_on_submit=False):
+        query = st.text_input("Type your question:", value="", placeholder="e.g., What is the grievance procedure timeline?")
+        top_k = st.slider("Number of chunks to consider", min_value=20, max_value=30, value=25, help="Higher values = more recall, slightly slower.")
+        submitted = st.form_submit_button("🔎 Search", use_container_width=True)
 
-    if st.button("Search", type="primary"):
+    if submitted:
         ranked = rank_chunks(query, vectorizer, matrix, chunks, top_k=top_k)
-        # Try OpenAI generation respecting constraints
+
+        # Intento con OpenAI (si hay API) respetando tus reglas
         ai_answer = call_openai_generate(query, ranked, max_sentences=5)
+
+        # Tarjeta de respuesta
         if ai_answer is None or not ai_answer.strip():
-            # Fallback to purely extractive compose_answer
-            answer, sources = compose_answer(query, ranked)
+            answer, sources_all = compose_answer(query, ranked)
+
+            # Enforzar respuesta compacta como ya haces
             unavailable = answer.startswith("I cannot find information in the provided chunks to answer this.") or \
                 answer.startswith("No se encuentra en la información disponible.")
             if not unavailable:
                 sents = split_sentences(answer)
                 if len(sents) > 6:
                     answer = " ".join(sents[:6]).strip()
-            st.write(answer)
-            st.write("\nSources:")
-            if sources:
-                for src in dedupe_preserve_order(sources, limit=10):
-                    st.write(f"- {src}")
-            else:
-                st.write("- not specified")
+
+            st.markdown(f"<div class='card answer-card'>{html.escape(answer)}</div>", unsafe_allow_html=True)
+
+            # Fuentes como chips (de-duplicadas, máx. 10)
+            render_sources_pills(dedupe_preserve_order(sources_all, limit=10))
         else:
-            st.write(ai_answer)
+            # El modelo ya devuelve texto + "Sources:"; lo presentamos en tarjeta
+            safe = html.escape(ai_answer).replace("\n", "<br>")
+            st.markdown(f"<div class='card answer-card'>{safe}</div>", unsafe_allow_html=True)
+
+            # Refuerza la sección de fuentes con nuestro ranking (coherente con tu motor)
+            st.caption("Top sources (from TF‑IDF ranking):")
+            render_sources_pills(format_sources_lines(ranked, max_items=10))
+
+    # Footer ligero
+    st.markdown(
+        "<div class='app-footer'>Prototype · CGIAR-inspired UI · © 2025</div>",
+        unsafe_allow_html=True
+    )
 
 
 if __name__ == "__main__":
