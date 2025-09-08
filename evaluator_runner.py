@@ -690,7 +690,7 @@ def call_openai_evaluator(question: str, ideal_answer: str, chatbot_answer: str,
     system_msg = (
         "You are an expert evaluator for enterprise knowledge-grounded Q&A. "
         "Assess whether the chatbot answer is sufficiently correct compared to the IDEAL answer for the same question. "
-        "Be strict but fair and consider factuality, coverage, clarity, and alignment with the ideal answer. "
+        "Be fair and consider whether the provided answer goes to the same direction and alignment with the ideal answer, it doesn’t need to be perfect, just correct enough or close enough"
         "Return ONLY strict JSON with keys: sufficiently_correct (boolean), score (integer 1-10), notes (short reason)."
     )
     user_msg = (
@@ -699,7 +699,7 @@ def call_openai_evaluator(question: str, ideal_answer: str, chatbot_answer: str,
         f"IDEAL ANSWER:\n{ideal_answer}\n\n"
         f"CHATBOT ANSWER:\n{chatbot_answer}\n\n"
         "Output format (JSON only): {\n"
-        "  \"sufficiently_correct(no necesita ser perfecta, basta que tenga el mismo sentido o significado)\": true|false,\n"
+        "  \"sufficiently_correct\": true|false,\n"
         "  \"score\": <integer 1-10>,\n"
         "  \"notes\": \"short reason\"\n"
         "}"
