@@ -12,8 +12,8 @@ from docx import Document as DocxDocument
 from pptx import Presentation
 from openai import OpenAI
 
-# --- Tema CGIAR ---------------------------------------------------------------
-import html  # para escapar texto en chips
+# --- CGIAR Theme --------------------------------------------------------------
+import html  # to escape text in chips
 
 CGIAR_COLORS = {
     "green_primary": "#427730",      # Corporate Green
@@ -22,18 +22,18 @@ CGIAR_COLORS = {
     "blue_bright": "#0065BD",        # Bright Blue
     "blue_medium": "#0039A6",        # Medium Blue
     "yellow": "#FDC82F",             # Yellow
-    "orange": "#E37222",             # Orange
-    "bg": "#F7FAF8",                 # Fondo claro suave
-    "panel": "#FFFFFF",              # Tarjetas
-    "text": "#1A202C",               # Texto principal
-    "muted": "#4A5568",              # Texto secundario
-    "border": "#E2E8F0",             # Bordes sutiles
+    "orange": "#E37222",             # Orange (amber-ish)
+    "bg": "#F7FAF8",                 # Light soft background
+    "panel": "#FFFFFF",              # Cards
+    "text": "#1A202C",               # Main text
+    "muted": "#4A5568",              # Secondary text
+    "border": "#E2E8F0",             # Subtle borders
 }
 
 def apply_cgiar_theme():
     st.markdown(f"""
     <style>
-        /* Tipografía */
+        /* Typography */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
         :root {{
@@ -60,15 +60,15 @@ def apply_cgiar_theme():
         #MainMenu {{ display: none; }}
         footer {{ visibility: hidden; }}
 
-        /* Contenedor principal */
+        /* Main container */
         .main .block-container {{
             max-width: 1100px;
             padding-top: 1.25rem;
         }}
 
-        /* Hero */
+        /* Hero — solid amber */
         .brand-hero {{
-            background: linear-gradient(90deg, var(--brand-primary) 0%, var(--brand-primary-strong) 100%);
+            background: var(--brand-orange);
             color: white;
             border-radius: 12px;
             padding: 1.25rem 1.25rem;
@@ -85,7 +85,7 @@ def apply_cgiar_theme():
             opacity: .95;
         }}
 
-        /* Tarjetas */
+        /* Cards */
         .card {{
             background: var(--panel);
             border: 1px solid var(--border);
@@ -98,7 +98,7 @@ def apply_cgiar_theme():
             border-left: 4px solid var(--brand-primary);
         }}
 
-        /* Chips de fuentes */
+        /* Source chips */
         .sources-wrap {{
             display: flex;
             flex-wrap: wrap;
@@ -116,7 +116,7 @@ def apply_cgiar_theme():
             white-space: nowrap;
         }}
 
-        /* Botones */
+        /* Buttons */
         .stButton > button {{
             width: 100%;
             border: 0;
@@ -154,12 +154,12 @@ def apply_cgiar_theme():
             color: var(--brand-primary);
         }}
 
-        /* Alertas sutiles */
+        /* Subtle alerts */
         .stAlert {{
             border-left: 4px solid var(--brand-accent);
         }}
 
-        /* Métricas compactas */
+        /* Compact metrics */
         .metric-row > div > div {{
             background: var(--panel);
             border: 1px solid var(--border);
@@ -167,7 +167,7 @@ def apply_cgiar_theme():
             padding: .75rem;
         }}
 
-        /* Footer simple */
+        /* Footer */
         .app-footer {{
             text-align: center;
             color: var(--muted);
@@ -183,7 +183,7 @@ class Chunk:
     source_path: str
     source_name: str
     kind: str  # pdf | docx | pptx
-    location: str  # e.g., "página 3", "diapositiva 2", "sección X / párrafo 12"
+    location: str  # e.g., "page 3", "slide 2", "section X / paragraph 12"
     id: str = ""
 
 
@@ -197,8 +197,6 @@ def normalize_whitespace(text: str) -> str:
 def split_sentences(text: str) -> List[str]:
     if not text:
         return []
-    # Simple sentence splitter suitable for ES text; avoids splitting on abbreviations naively
-    # Falls back to newline when punctuation is scarce
     parts = re.split(r"(?<=[\.\!\?])\s+", text)
     sentences: List[str] = []
     for p in parts:
@@ -206,7 +204,6 @@ def split_sentences(text: str) -> List[str]:
         if len(p) > 0:
             sentences.append(p)
     if len(sentences) <= 1:
-        # Try line-based splitting if punctuation is rare
         lines = [ln.strip() for ln in re.split(r"[\n\r]+", text) if ln.strip()]
         if len(lines) > len(sentences):
             sentences = lines
@@ -217,7 +214,7 @@ def read_pdf_chunks(path: str) -> List[Chunk]:
     chunks: List[Chunk] = []
     try:
         reader = PdfReader(path)
-        for index, page in enumerate(reader.pages):
+        for index, page in enumerate(reader.pages, start=1):
             try:
                 page_text = page.extract_text() or ""
             except Exception:
@@ -230,12 +227,11 @@ def read_pdf_chunks(path: str) -> List[Chunk]:
                         source_path=path,
                         source_name=os.path.basename(path),
                         kind="pdf",
-                        location=f"página {index + 1}",
-                        id=f"pdf:{os.path.basename(path)}:p{index + 1}",
+                        location=f"page {index}",
+                        id=f"pdf:{os.path.basename(path)}:p{index}",
                     )
                 )
     except Exception:
-        # Skip unreadable PDFs silently
         pass
     return chunks
 
@@ -253,7 +249,7 @@ def read_docx_chunks(path: str) -> List[Chunk]:
             if style_name.lower().startswith("heading") or style_name.lower().startswith("título"):
                 current_section = text
             location = (
-                f"sección '{current_section}'" if current_section else f"párrafo {paragraph_index}"
+                f"section '{current_section}'" if current_section else f"paragraph {paragraph_index}"
             )
             chunks.append(
                 Chunk(
@@ -293,7 +289,7 @@ def read_pptx_chunks(path: str) -> List[Chunk]:
                         source_path=path,
                         source_name=os.path.basename(path),
                         kind="pptx",
-                        location=f"diapositiva {slide_index}",
+                        location=f"slide {slide_index}",
                         id=f"pptx:{os.path.basename(path)}:s{slide_index}",
                     )
                 )
@@ -302,41 +298,70 @@ def read_pptx_chunks(path: str) -> List[Chunk]:
     return chunks
 
 
-def load_corpus(root_dir: str) -> List[Chunk]:
+def load_corpus(root_dir: str,
+                hide_failures: bool = True,
+                exclude_patterns: Optional[List[str]] = None) -> List[Chunk]:
+    """
+    Recorre root_dir y subcarpetas, carga solo .pdf/.docx/.pptx.
+    Muestra únicamente los archivos cargados con éxito (por defecto).
+    Puedes excluir archivos por patrón (p.ej., ['^default\\.', '^\\._', '^~\\$']).
+    """
     supported_ext = {".pdf", ".docx", ".pptx"}
+    exclude_patterns = exclude_patterns or []
+    compiled_excludes = [re.compile(pat, re.IGNORECASE) for pat in exclude_patterns]
+
     chunks: List[Chunk] = []
-    processed_files = set()
-    
-    with st.expander("🔍 View document processing details", expanded=False):
-        st.write("### Processing files:")
-        for dirpath, _, filenames in os.walk(root_dir):
-            for fname in filenames:
-                ext = os.path.splitext(fname)[1].lower()
-                if ext not in supported_ext:
+    ok_files: List[Tuple[str, int]] = []   # (nombre, n_chunks)
+    bad_files: List[str] = []
+
+    for dirpath, _, filenames in os.walk(root_dir):
+        for fname in filenames:
+            # Excluir por patrón (ej.: default.*, archivos ocultos de macOS, backups temporales)
+            if any(p.match(fname) for p in compiled_excludes):
+                continue
+
+            ext = os.path.splitext(fname)[1].lower()
+            if ext not in supported_ext:
+                continue
+
+            abspath = os.path.join(dirpath, fname)
+            # Excluir archivos vacíos
+            try:
+                if os.path.getsize(abspath) == 0:
+                    bad_files.append(fname)
                     continue
-                abspath = os.path.join(dirpath, fname)
-                st.write(f"📄 Loading: {fname}")
-                
-                new_chunks = []
+            except Exception:
+                bad_files.append(fname)
+                continue
+
+            new_chunks: List[Chunk] = []
+            try:
                 if ext == ".pdf":
                     new_chunks = read_pdf_chunks(abspath)
                 elif ext == ".docx":
                     new_chunks = read_docx_chunks(abspath)
                 elif ext == ".pptx":
                     new_chunks = read_pptx_chunks(abspath)
-                    
-                if new_chunks:
-                    chunks.extend(new_chunks)
-                    processed_files.add(fname)
-                    st.write(f"✅ Successfully loaded: {fname} ({len(new_chunks)} chunks)")
-                else:
-                    st.write(f"❌ Failed to load: {fname}")
-        
-        st.write(f"\n### Summary:")
-        st.write(f"Successfully loaded {len(processed_files)} files:")
-        for file in sorted(processed_files):
-            st.write(f"- {file}")
-    
+            except Exception:
+                new_chunks = []
+
+            if new_chunks:
+                chunks.extend(new_chunks)
+                ok_files.append((fname, len(new_chunks)))
+            else:
+                bad_files.append(fname)
+
+    # Panel de “detalles de procesamiento”
+    with st.expander("🔍 View document processing details", expanded=False):
+        st.write("### ✅ Loaded files:")
+        for fname, n in ok_files:
+            st.write(f"✅ {fname} ({n} chunks)")
+        st.write(f"\n**Summary:** {len(ok_files)} loaded")
+        if not hide_failures and bad_files:
+            st.write("### ❌ Skipped/failed files:")
+            for fname in bad_files:
+                st.write(f"❌ {fname}")
+
     return chunks
 
 
@@ -344,7 +369,6 @@ def load_corpus(root_dir: str) -> List[Chunk]:
 def build_index(chunks: List[Chunk]) -> Tuple[TfidfVectorizer, any]:
     texts = [c.text for c in chunks]
     if not texts:
-        # Fit a dummy vectorizer to avoid runtime errors; it will simply match nothing
         vectorizer = TfidfVectorizer(stop_words=None)
         vectorizer.fit(["dummy"])
         matrix = vectorizer.transform(["dummy"])
@@ -360,7 +384,6 @@ def rank_chunks(query: str, vectorizer: TfidfVectorizer, matrix, chunks: List[Ch
     q_vec = vectorizer.transform([query])
     sims = cosine_similarity(q_vec, matrix)[0]
     idx_scores = sorted(enumerate(sims), key=lambda x: x[1], reverse=True)
-    # Filter very low-similarity noise
     results: List[Tuple[Chunk, float]] = []
     for idx, score in idx_scores[: max(top_k * 2, top_k)]:
         if score <= 0.02:
@@ -372,7 +395,6 @@ def rank_chunks(query: str, vectorizer: TfidfVectorizer, matrix, chunks: List[Ch
 
 
 def extract_relevant_sentences(query: str, texts: List[str], max_sentences: int = 6) -> List[str]:
-    # Keyword-based scoring to stay extractive and faithful
     query_terms = [t for t in re.split(r"\W+", query.lower()) if len(t) > 2]
     candidates: List[Tuple[str, float]] = []
     for block in texts:
@@ -380,7 +402,6 @@ def extract_relevant_sentences(query: str, texts: List[str], max_sentences: int 
             low = sent.lower()
             if not low:
                 continue
-            # Score: term frequency + length normalization preference
             tf = sum(low.count(t) for t in query_terms)
             if tf == 0:
                 continue
@@ -404,22 +425,20 @@ def extract_relevant_sentences(query: str, texts: List[str], max_sentences: int 
 def compose_answer(query: str, ranked: List[Tuple[Chunk, float]]) -> Tuple[str, List[str]]:
     if not ranked:
         msg = (
-            "No se encuentra en la información disponible. "
-            "Faltaría una referencia específica (documento/página o sección). "
-            "Verifica el nombre del documento o intenta con otras palabras clave."
+            "Not found in the available information. "
+            "A specific reference (document/page or section) would be needed. "
+            "Verify the document name or try other keywords."
         )
         return msg, []
     texts = [c.text for c, _ in ranked]
     sentences = extract_relevant_sentences(query, texts, max_sentences=6)
-    # Enforce 3–6 sentences if possible
     if len(sentences) == 0:
         msg = (
-            "No se encuentra en la información disponible. "
-            "No hay fragmentos relevantes para la consulta actual."
+            "Not found in the available information. "
+            "There are no relevant snippets for the current query."
         )
         return msg, []
     if len(sentences) < 3 and len(ranked) >= 2:
-        # If too few sentences, append short neutral connectors from top texts (still extractive)
         extra_sentences = []
         for c, _ in ranked:
             sents = split_sentences(c.text)
@@ -451,13 +470,12 @@ def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10
 
 
 def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5) -> Optional[str]:
-    # Build compact context from top chunks
     max_ctx = 12
     selected = ranked[:max_ctx]
     context_blocks: List[str] = []
     for c, _ in selected:
         context_blocks.append(
-            f"[ID: {c.id}]\nArchivo: {c.source_name}\nUbicación: {c.location}\nContenido: {c.text}"
+            f"[ID: {c.id}]\nFile: {c.source_name}\nLocation: {c.location}\nContent: {c.text}"
         )
     context = "\n\n---\n\n" + "\n\n---\n\n".join(context_blocks) if context_blocks else ""
 
@@ -496,7 +514,6 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
             )
             return (resp.choices[0].message.content or "").strip()
         except Exception:
-            # Fallback to responses API if available
             try:
                 resp2 = client.responses.create(
                     model="gpt-4o-mini",
@@ -507,7 +524,6 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
                     temperature=0.1,
                     max_output_tokens=500,
                 )
-                # responses.create returns output in a different structure
                 if hasattr(resp2, "output") and resp2.output and hasattr(resp2.output[0], "content"):
                     parts = resp2.output[0].content
                     if parts and hasattr(parts[0], "text"):
@@ -540,28 +556,27 @@ def render_sources_pills(lines):
     st.markdown(f"<div class='sources-wrap'>{pills}</div>", unsafe_allow_html=True)
 
 def render_app() -> None:
-    st.set_page_config(page_title="H&R Hub — RAG (CGIAR)", page_icon="🌿", layout="centered")
+    st.set_page_config(page_title="P&R Hub — RAG (CGIAR)", page_icon="🌿", layout="centered")
     apply_cgiar_theme()
 
-    # Cabecera tipo hero
+    # Hero header (solid amber + new title)
     st.markdown("""
         <div class="brand-hero">
-            <h1>H&R Hub — Document‑grounded RAG assistant</h1>
+            <h1>P&R Hub — Document-grounded RAG assistant</h1>
             <p>Answers strictly based on the documents in this project. Always include the <strong>Sources</strong> section.</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Sidebar: guía rápida y ejemplos
+    # Sidebar: quick help & example (English, with help icon, and your example)
     with st.sidebar:
-        st.markdown("### ℹ️ Quick help")
-        st.write("- Coloca tus **PDF/DOCX/PPTX** en el proyecto.")
-        st.write("- Escribe una pregunta concreta.")
-        st.write("- Ajusta el número de chunks si necesitas más/menos contexto.")
+        st.markdown("### ❓ Quick help")
+        st.write("- Place your **PDF/DOCX/PPTX** in the project folder.")
+        st.write("- Ask a specific question.")
+        st.write("- Adjust the number of chunks if you need more/less context.")
         st.markdown("---")
-        st.markdown("**Ejemplos**")
-        st.caption("• HR policy on remote work eligibility\n• Recruitment process steps timeline\n• Benefits entitlements for consultants")
+        st.markdown("**Examples**")
+        st.caption("• What evidence architecture and rigor standards underpin the report’s claims? Summarize the dataset, methods, and how to interpret causality.")
         st.markdown("---")
-        st.caption("Colors follow CGIAR guidelines (Corporate Green + supporting palette).")
 
     project_root = os.path.dirname(os.path.abspath(__file__))
     with st.spinner("Loading documents and building index…"):
@@ -571,7 +586,7 @@ def render_app() -> None:
     num_docs = len({c.source_path for c in chunks})
     num_chunks = len(chunks)
 
-    # Métricas como tarjetas
+    # Metric cards
     cols = st.columns(2, gap="small")
 
     with cols[0]:
@@ -602,7 +617,7 @@ def render_app() -> None:
             "Add files to the existing folders and reload."
         )
 
-    # Área de búsqueda como formulario (Enter envía)
+    # Search area as a form
     with st.form("ask_form", clear_on_submit=False):
         query = st.text_input("Type your question:", value="", placeholder="e.g., What is the grievance procedure timeline?")
         top_k = st.slider("Number of chunks to consider", min_value=20, max_value=30, value=25, help="Higher values = more recall, slightly slower.")
@@ -611,16 +626,16 @@ def render_app() -> None:
     if submitted:
         ranked = rank_chunks(query, vectorizer, matrix, chunks, top_k=top_k)
 
-        # Intento con OpenAI (si hay API) respetando tus reglas
+        # Try OpenAI (if API key present) per your rules
         ai_answer = call_openai_generate(query, ranked, max_sentences=5)
 
-        # Tarjeta de respuesta
+        # Answer card
         if ai_answer is None or not ai_answer.strip():
             answer, sources_all = compose_answer(query, ranked)
 
-            # Enforzar respuesta compacta como ya haces
+            # Keep answer compact
             unavailable = answer.startswith("I cannot find information in the provided chunks to answer this.") or \
-                answer.startswith("No se encuentra en la información disponible.")
+                answer.startswith("Not found in the available information.")
             if not unavailable:
                 sents = split_sentences(answer)
                 if len(sents) > 6:
@@ -628,18 +643,18 @@ def render_app() -> None:
 
             st.markdown(f"<div class='card answer-card'>{html.escape(answer)}</div>", unsafe_allow_html=True)
 
-            # Fuentes como chips (de-duplicadas, máx. 10)
+            # Source chips (de-duplicated, max 10)
             render_sources_pills(dedupe_preserve_order(sources_all, limit=10))
         else:
-            # El modelo ya devuelve texto + "Sources:"; lo presentamos en tarjeta
+            # Model already returns text + "Sources:"; present it in a card
             safe = html.escape(ai_answer).replace("\n", "<br>")
             st.markdown(f"<div class='card answer-card'>{safe}</div>", unsafe_allow_html=True)
 
-            # Refuerza la sección de fuentes con nuestro ranking (coherente con tu motor)
-            st.caption("Top sources (from TF‑IDF ranking):")
+            # Reinforce sources section with our TF-IDF ranking
+            st.caption("Top sources (from TF-IDF ranking):")
             render_sources_pills(format_sources_lines(ranked, max_items=10))
 
-    # Footer ligero
+    # Footer
     st.markdown(
         "<div class='app-footer'>Prototype · CGIAR-inspired UI · © 2025</div>",
         unsafe_allow_html=True
@@ -648,5 +663,3 @@ def render_app() -> None:
 
 if __name__ == "__main__":
     render_app()
-
-
