@@ -15,6 +15,11 @@ from openai import OpenAI
 # --- CGIAR Theme --------------------------------------------------------------
 import html  # to escape text in chips
 
+import pandas as pd
+import pickle
+import hashlib
+from dataclasses import asdict
+
 CGIAR_COLORS = {
     "green_primary": "#427730",      # Corporate Green
     "green_leaf": "#7AB800",         # Leaf green
@@ -365,7 +370,6 @@ def load_corpus(root_dir: str,
     return chunks
 
 
-@st.cache_resource(show_spinner=False)
 def build_index(chunks: List[Chunk]) -> Tuple[TfidfVectorizer, any]:
     texts = [c.text for c in chunks]
     if not texts:
@@ -377,6 +381,18 @@ def build_index(chunks: List[Chunk]) -> Tuple[TfidfVectorizer, any]:
     matrix = vectorizer.fit_transform(texts)
     return vectorizer, matrix
 
+def get_corpus_hash(root_dir: str) -> str:
+    hash_str = ''
+    supported_ext = {".pdf", ".docx", ".pptx"}
+    for dirpath, _, filenames in os.walk(root_dir):
+        for fname in sorted(filenames):
+            if os.path.splitext(fname)[1].lower() not in supported_ext:
+                continue
+            abspath = os.path.join(dirpath, fname)
+            mtime = os.path.getmtime(abspath)
+            size = os.path.getsize(abspath)
+            hash_str += f"{abspath}:{mtime}:{size}\n"
+    return hashlib.sha256(hash_str.encode()).hexdigest()
 
 def rank_chunks(query: str, vectorizer: TfidfVectorizer, matrix, chunks: List[Chunk], top_k: int = 25) -> List[Tuple[Chunk, float]]:
     if not query.strip():
@@ -579,9 +595,38 @@ def render_app() -> None:
         st.markdown("---")
 
     project_root = os.path.dirname(os.path.abspath(__file__))
-    with st.spinner("Loading documents and building index…"):
-        chunks = load_corpus(project_root)
-        vectorizer, matrix = build_index(chunks)
+    chunks_file = os.path.join(project_root, 'chunks.xlsx')
+    index_file = os.path.join(project_root, 'index.pkl')
+    hash_file = os.path.join(project_root, 'corpus_hash.txt')
+
+    current_hash = get_corpus_hash(project_root)
+
+    load_from_cache = False
+    if all(os.path.exists(f) for f in [hash_file, chunks_file, index_file]):
+        with open(hash_file, 'r') as f:
+            saved_hash = f.read().strip()
+        if saved_hash == current_hash:
+            load_from_cache = True
+
+    if load_from_cache:
+        with st.spinner("Loading from cache..."):
+            df = pd.read_excel(chunks_file)
+            chunks = [Chunk(**row) for row in df.to_dict(orient='records')]
+            with open(index_file, 'rb') as f:
+                data = pickle.load(f)
+            vectorizer = data['vectorizer']
+            matrix = data['matrix']
+    else:
+        with st.spinner("Loading documents..."):
+            chunks = load_corpus(project_root)
+        df = pd.DataFrame([asdict(c) for c in chunks])
+        df.to_excel(chunks_file, index=False)
+        with st.spinner("Building index..."):
+            vectorizer, matrix = build_index(chunks)
+        with open(index_file, 'wb') as f:
+            pickle.dump({'vectorizer': vectorizer, 'matrix': matrix}, f)
+        with open(hash_file, 'w') as f:
+            f.write(current_hash)
 
     num_docs = len({c.source_path for c in chunks})
     num_chunks = len(chunks)
