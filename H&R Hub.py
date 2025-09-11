@@ -665,7 +665,7 @@ def render_app() -> None:
     # Search area as a form
     with st.form("ask_form", clear_on_submit=False):
         query = st.text_input("Type your question:", value="", placeholder="e.g., What is the grievance procedure timeline?")
-        top_k = st.slider("Number of chunks to consider", min_value=20, max_value=30, value=25, help="Higher values = more recall, slightly slower.")
+        top_k = st.slider("Number of chunks to consider", min_value=20, max_value=100, value=25, help="Higher values = more recall, slightly slower.")
         submitted = st.form_submit_button("🔎 Search", use_container_width=True)
 
     if submitted:
