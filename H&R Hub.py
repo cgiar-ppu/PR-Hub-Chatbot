@@ -502,14 +502,14 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
         "Do not invent or extrapolate beyond the context and preserve acronyms EXACTLY as written. "
         "ALWAYS answer in English, regardless of the user's language. "
         "If there is insufficient evidence, return EXACTLY: 'I cannot find information in the provided chunks to answer this.'"
-    )
-
-    user_msg = (
         "Output instructions:\n"
         "- 3 to 5 sentences, neutral and direct style, no lists.\n"
         "- ALWAYS answer in English and adapt wording to the question's context.\n"
         "- End with the literal 'Sources:' and then, as a list, each line as 'File — Location — Cited IDs'.\n"
         "- If insufficient evidence, return EXACTLY: 'I cannot find information in the provided chunks to answer this.'\n\n"
+    )
+
+    user_msg = (
         f"Question: {query}\n\nContext:{context}"
     )
 
