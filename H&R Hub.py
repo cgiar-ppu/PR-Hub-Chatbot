@@ -485,7 +485,7 @@ def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10
     return lines
 
 
-def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5) -> Optional[str]:
+def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5, custom_system_msg: Optional[str] = None) -> Optional[str]:
     max_ctx = 12
     selected = ranked[:max_ctx]
     context_blocks: List[str] = []
@@ -495,7 +495,7 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
         )
     context = "\n\n---\n\n" + "\n\n---\n\n".join(context_blocks) if context_blocks else ""
 
-    system_msg = (
+    system_msg = custom_system_msg if custom_system_msg is not None else (
         "You are a RAG assistant. Use ONLY the provided context as your source, "
         "without copying full sentences verbatim from chunks (max 10 consecutive words). "
         "Write clearly and cohesively, interpreting the usage context to adapt the response. "
@@ -526,7 +526,7 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
                     {"role": "user", "content": user_msg},
                 ],
                 temperature=0.1,
-                max_tokens=500,
+                max_tokens=5000,
             )
             return (resp.choices[0].message.content or "").strip()
         except Exception:
@@ -538,7 +538,7 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
                         {"role": "user", "content": user_msg},
                     ],
                     temperature=0.1,
-                    max_output_tokens=500,
+                    max_output_tokens=5000,
                 )
                 if hasattr(resp2, "output") and resp2.output and hasattr(resp2.output[0], "content"):
                     parts = resp2.output[0].content
@@ -575,6 +575,11 @@ def render_app() -> None:
     st.set_page_config(page_title="P&R Hub — RAG (CGIAR)", page_icon="🌿", layout="centered")
     apply_cgiar_theme()
 
+    default_system_prompt = """You are a RAG assistant. Use ONLY the provided context as your source, without copying full sentences verbatim from chunks (max 10 consecutive words). Write clearly and cohesively, interpreting the usage context to adapt the response. Do not invent or extrapolate beyond the context and preserve acronyms EXACTLY as written. ALWAYS answer in English, regardless of the user's language. If there is insufficient evidence, return EXACTLY: 'I cannot find information in the provided chunks to answer this.'Output instructions:\n- 3 to 5 sentences, neutral and direct style, no lists.\n- ALWAYS answer in English and adapt wording to the question's context.\n- End with the literal 'Sources:' and then, as a list, each line as 'File — Location — Cited IDs'.\n- If insufficient evidence, return EXACTLY: 'I cannot find information in the provided chunks to answer this.'\n\n"""
+
+    if 'system_prompt' not in st.session_state:
+        st.session_state.system_prompt = default_system_prompt
+
     # Hero header (solid amber + new title)
     st.markdown("""
         <div class="brand-hero">
@@ -593,6 +598,10 @@ def render_app() -> None:
         st.markdown("**Examples**")
         st.caption("• What evidence architecture and rigor standards underpin the report’s claims? Summarize the dataset, methods, and how to interpret causality.")
         st.markdown("---")
+
+        st.markdown("---")
+        with st.expander("Edit System Prompt"):
+            st.session_state.system_prompt = st.text_area("Customize the system prompt for the AI:", value=st.session_state.system_prompt, height=300)
 
     project_root = os.path.dirname(os.path.abspath(__file__))
     chunks_file = os.path.join(project_root, 'chunks.xlsx')
@@ -672,7 +681,7 @@ def render_app() -> None:
         ranked = rank_chunks(query, vectorizer, matrix, chunks, top_k=top_k)
 
         # Try OpenAI (if API key present) per your rules
-        ai_answer = call_openai_generate(query, ranked, max_sentences=5)
+        ai_answer = call_openai_generate(query, ranked, max_sentences=5, custom_system_msg=st.session_state.get('system_prompt'))
 
         # Answer card
         if ai_answer is None or not ai_answer.strip():
