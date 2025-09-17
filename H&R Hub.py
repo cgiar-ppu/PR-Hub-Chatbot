@@ -218,36 +218,58 @@ def split_sentences(text: str) -> List[str]:
     return sentences
 
 
+def split_text_into_overlapping_parts(text: str, num_parts: int = 4, overlap_fraction: float = 0.25) -> List[str]:
+    words = text.split()
+    total_words = len(words)
+    if total_words == 0:
+        return []
+    denominator = num_parts - (num_parts - 1) * overlap_fraction if num_parts > 1 else 1
+    part_words = int(total_words / denominator) if denominator > 0 else total_words
+    overlap_words = int(part_words * overlap_fraction)
+    step = part_words - overlap_words
+    parts = []
+    start = 0
+    for i in range(num_parts):
+        end = min(start + part_words, total_words)
+        part = ' '.join(words[start:end])
+        if part:
+            parts.append(part)
+        if end >= total_words:
+            break
+        start += step
+    return parts
+
+
 def read_pdf_chunks(path: str) -> List[Chunk]:
     chunks: List[Chunk] = []
     try:
         reader = PdfReader(path)
         for index, page in enumerate(reader.pages, start=1):
-            try:
-                page_text = page.extract_text() or ""
-            except Exception:
-                page_text = ""
-            cleaned = normalize_whitespace(page_text)
-            if cleaned:
+            page_text = normalize_whitespace(page.extract_text() or "")
+            if not page_text:
+                continue
+            parts = split_text_into_overlapping_parts(page_text, 4, 0.25)
+            for part_idx, part in enumerate(parts, start=1):
                 chunks.append(
                     Chunk(
-                        text=cleaned,
+                        text=part,
                         source_path=path,
                         source_name=os.path.basename(path),
                         kind="pdf",
-                        location=f"page {index}",
-                        id=f"pdf:{os.path.basename(path)}:p{index}",
+                        location=f"page {index} part {part_idx}",
+                        id=f"pdf:{os.path.basename(path)}:p{index}pt{part_idx}",
                     )
                 )
+        return chunks
     except Exception:
-        pass
-    return chunks
+        return []
 
 
 def read_docx_chunks(path: str) -> List[Chunk]:
-    chunks: List[Chunk] = []
     try:
         doc = DocxDocument(path)
+        unit_texts: List[str] = []
+        unit_locations: List[str] = []
         current_section: Optional[str] = None
         for paragraph_index, paragraph in enumerate(doc.paragraphs, start=1):
             text = normalize_whitespace(paragraph.text)
@@ -256,22 +278,13 @@ def read_docx_chunks(path: str) -> List[Chunk]:
             style_name = getattr(paragraph.style, "name", "") or ""
             if style_name.lower().startswith("heading") or style_name.lower().startswith("título"):
                 current_section = text
-            location = (
-                f"section '{current_section}'" if current_section else f"paragraph {paragraph_index}"
-            )
-            chunks.append(
-                Chunk(
-                    text=text,
-                    source_path=path,
-                    source_name=os.path.basename(path),
-                    kind="docx",
-                    location=location,
-                    id=f"docx:{os.path.basename(path)}:p{paragraph_index}",
-                )
-            )
+            location = f"section '{current_section}' paragraph {paragraph_index}" if current_section else f"paragraph {paragraph_index}"
+            unit_texts.append(text)
+            unit_locations.append(location)
+        return create_overlapped_chunks(unit_texts, unit_locations, os.path.basename(path), "docx", path)
     except Exception:
         pass
-    return chunks
+    return []
 
 
 def read_pptx_chunks(path: str) -> List[Chunk]:
@@ -290,19 +303,68 @@ def read_pptx_chunks(path: str) -> List[Chunk]:
                 except Exception:
                     continue
             slide_text = normalize_whitespace("\n".join(texts))
-            if slide_text:
+            if not slide_text:
+                continue
+            parts = split_text_into_overlapping_parts(slide_text, 4, 0.25)
+            for part_idx, part in enumerate(parts, start=1):
                 chunks.append(
                     Chunk(
-                        text=slide_text,
+                        text=part,
                         source_path=path,
                         source_name=os.path.basename(path),
                         kind="pptx",
-                        location=f"slide {slide_index}",
-                        id=f"pptx:{os.path.basename(path)}:s{slide_index}",
+                        location=f"slide {slide_index} part {part_idx}",
+                        id=f"pptx:{os.path.basename(path)}:s{slide_index}pt{part_idx}",
                     )
                 )
+        return chunks
     except Exception:
-        pass
+        return []
+
+
+def create_overlapped_chunks(unit_texts: List[str], unit_locations: List[str], basename: str, kind: str, path: str, window_size: int = 4, overlap: int = 1) -> List[Chunk]:
+    chunks: List[Chunk] = []
+    step = window_size - overlap
+    for i in range(0, len(unit_texts), step):
+        end = i + window_size
+        slice_texts = unit_texts[i:end]
+        slice_locations = unit_locations[i:end] if end <= len(unit_locations) else unit_locations[i:]
+        if len(slice_texts) == 0:
+            continue
+        merge_len = len(slice_texts)
+        if merge_len < 3 and chunks:
+            # merge to last
+            last = chunks[-1]
+            last.text += ' ' + ' '.join(slice_texts)
+            last_loc_end = slice_locations[-1] if slice_locations else ""
+            last.location = last.location.rsplit(" to ", 1)[0] + f" to {last_loc_end}"
+            # update id
+            parts = last.id.split(':')
+            if len(parts) == 3 and parts[2].startswith('u'):
+                range_part = parts[2][1:]
+                start_str, end_str = range_part.split('-')
+                start = int(start_str)
+                old_end = int(end_str)
+                new_end = old_end + merge_len
+                last.id = f"{parts[0]}:{parts[1]}:u{start}-{new_end}"
+            continue
+        chunk_text = ' '.join(slice_texts)
+        loc_start = slice_locations[0]
+        loc_end = slice_locations[-1]
+        chunk_loc = f"{loc_start} to {loc_end}"
+        start_idx = i + 1
+        end_idx = i + merge_len
+        chunk_id = f"{kind}:{basename}:u{start_idx}-{end_idx}"
+        chunks.append(
+            Chunk(
+                text=chunk_text,
+                source_path=path,
+                source_name=basename,
+                kind=kind,
+                location=chunk_loc,
+                id=chunk_id,
+            )
+        )
     return chunks
 
 
@@ -677,7 +739,7 @@ def render_app() -> None:
     # Search area as a form
     with st.form("ask_form", clear_on_submit=False):
         query = st.text_input("Type your question:", value="", placeholder="e.g., What is the grievance procedure timeline?")
-        top_k = st.slider("Number of chunks to consider", min_value=20, max_value=100, value=25, help="Higher values = more recall, slightly slower.")
+        top_k = st.slider("Number of chunks to consider", min_value=20, max_value=200, value=100, help="Higher values = more recall, slightly slower.")
         submitted = st.form_submit_button("🔎 Search", use_container_width=True)
 
     if submitted:

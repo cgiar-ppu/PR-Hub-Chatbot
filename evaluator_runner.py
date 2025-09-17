@@ -399,7 +399,7 @@ def build_metrics_workbook_llm(
     enable_fuzzy: bool = True,
     max_tokens: int = 300,
     temperature: float = 0.0,
-    no_cache: bool = False,  # New param to skip cache
+    no_cache: bool = True,  # Default to True to disable cache by default
 ) -> Path:
     src_path = evaluator_dir / "Evaluator questions.xlsx"
     if not src_path.exists():
@@ -611,7 +611,7 @@ def parse_args(argv: List[str]):
     parser.add_argument("--evaluator-dir", default=None)
     parser.add_argument("--max-tokens", type=int, default=300)
     parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--no-cache", action="store_true", help="Ignore LLM cache and force fresh evaluations")
+    parser.add_argument("--cache", action="store_true", help="Enable LLM cache to speed up evaluations (default: disabled)")
     return parser.parse_args(argv[1:])
 
 def main(argv: List[str]) -> None:
@@ -629,7 +629,7 @@ def main(argv: List[str]) -> None:
             enable_fuzzy=(not args.no_fuzzy),
             max_tokens=int(args.max_tokens),
             temperature=float(args.temperature),
-            no_cache=args.no_cache,  # Pass the new flag
+            no_cache=not args.cache,  # Invert the flag: if --cache is set, use cache (no_cache=False)
         )
         logger.info("Done. Metrics (LLM): %s", path)
     else:
