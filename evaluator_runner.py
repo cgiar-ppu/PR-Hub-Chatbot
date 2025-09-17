@@ -266,6 +266,35 @@ def _cache_key(model: str, question: str, ideal: str, chatbot: str) -> str:
     h.update(chatbot.encode("utf-8"))
     return h.hexdigest()
 
+def _normalize_unavailable_to_english(answer: str) -> str:
+    if not isinstance(answer, str):
+        return ""
+    trimmed = answer.strip()
+    if trimmed.startswith("No se encuentra en la información disponible"):
+        return "I cannot find information in the provided chunks to answer this."
+    return trimmed
+
+def generate_answer_for_question(query: str, mod, vectorizer, matrix, chunks, top_k: int = 25) -> str:
+    def attempt_once() -> Optional[str]:
+        ranked = mod.rank_chunks(query, vectorizer, matrix, chunks, top_k=top_k)
+        ai_answer, _ = mod.call_openai_generate(query, ranked, max_sentences=5)
+        if ai_answer is None or (isinstance(ai_answer, str) and ai_answer.strip() == ""):
+            fallback, _ = mod.compose_answer(query, ranked)
+            return _normalize_unavailable_to_english(fallback)
+        return str(ai_answer).strip()
+
+    try:
+        ans = attempt_once()
+        if ans is not None and len(ans.strip()) > 0:
+            return ans
+        # retry once
+        ans = attempt_once()
+        if ans is not None and len(ans.strip()) > 0:
+            return ans
+    except Exception:
+        pass
+    return "Error al generar respuesta"
+
 def call_openai_evaluator(
     question: str,
     ideal_answer: str,
@@ -404,7 +433,50 @@ def build_metrics_workbook_llm(
     src_path = evaluator_dir / "Evaluator questions.xlsx"
     if not src_path.exists():
         raise FileNotFoundError(f"Missing template workbook: {src_path}")
-    answers_path = _find_answers_workbook(evaluator_dir)
+
+    # Load H&R Hub module
+    import types
+    import importlib.util
+    def _ensure_streamlit_stub_if_missing() -> None:
+        try:
+            import streamlit  # noqa: F401
+            return
+        except Exception:
+            pass
+        st_module = types.ModuleType("streamlit")
+        def cache_resource(show_spinner: bool = False):
+            def decorator(fn):
+                return fn
+            return decorator
+        st_module.cache_resource = cache_resource
+        st_module.set_page_config = lambda *args, **kwargs: None
+        st_module.title = lambda *args, **kwargs: None
+        st_module.caption = lambda *args, **kwargs: None
+        st_module.write = lambda *args, **kwargs: None
+        st_module.warning = lambda *args, **kwargs: None
+        st_module.text_input = lambda *args, **kwargs: ""
+        st_module.slider = lambda *args, **kwargs: 25
+        st_module.button = lambda *args, **kwargs: False
+        class _DummyCtx:
+            def __enter__(self):
+                return None
+            def __exit__(self, exc_type, exc, tb):
+                return False
+        st_module.spinner = lambda *args, **kwargs: _DummyCtx()
+        sys.modules["streamlit"] = st_module
+
+    project_root = Path(__file__).resolve().parent
+    main_path = project_root / "H&R Hub.py"
+    spec = importlib.util.spec_from_file_location("hr_hub_module", main_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module from {main_path}")
+    mod = importlib.util.module_from_spec(spec)
+    _ensure_streamlit_stub_if_missing()
+    spec.loader.exec_module(mod)
+
+    # Build index
+    chunks = mod.load_corpus(project_root)
+    vectorizer, matrix = mod.build_index(chunks)
 
     # Carga hojas correctas por encabezados
     wb = load_workbook(filename=str(src_path))
@@ -416,24 +488,24 @@ def build_metrics_workbook_llm(
     if q_col is None:
         raise ValueError("Template workbook must contain a 'Questions' header in row 1.")
 
-    wb_ans = load_workbook(filename=str(answers_path))
-    ws_ans = select_first_sheet_with_header(wb_ans, QUESTION_HEADERS)
-    q_col_ans = find_header_col(ws_ans, QUESTION_HEADERS)
-    ch_col_ans = find_header_col(ws_ans, CHATBOT_HEADERS)
-    if q_col_ans is None or ch_col_ans is None:
-        raise ValueError("Answers workbook must contain 'Questions' and 'Chatbot Answer' headers.")
-
-    # Extrae filas y empareja
+    # Extrae filas
     eval_rows = load_rows(ws, q_col, ia_col)
-    chat_rows = load_chatbot_rows(ws_ans, q_col_ans, ch_col_ans)
-    pairings = match_by_question_smart(eval_rows, chat_rows, fuzzy_threshold=fuzzy_threshold, enable_fuzzy=enable_fuzzy)
 
-    # Avisos
-    used_chat_ids = {r_chat for (_re, _q, _i, r_chat, _ch) in pairings if r_chat is not None}
-    unmatched_chat = [r for (r, _q, _ch) in chat_rows if r not in used_chat_ids]
-    if unmatched_chat:
-        logger.warning("Hay %d filas de 'Chatbot Answers' sin emparejar (ej.: filas %s).",
-                       len(unmatched_chat), unmatched_chat[:5])
+    # Generate chatbot answers on the fly
+    chat_rows = []
+    for r, q, ideal in eval_rows:
+        if not q:
+            continue
+        ch = generate_answer_for_question(q, mod, vectorizer, matrix, chunks, top_k=200)
+        chat_rows.append((r, q, ch))
+
+    # Pairings: since generated directly, pair them
+    pairings = []
+    for (r_eval, q, ideal), (r_chat, _q, ch) in zip(eval_rows, chat_rows):
+        pairings.append((r_eval, q, ideal, r_chat, ch))
+
+    # Avisos (simplified since no unmatched)
+    logger.info("Generated %d chatbot answers for %d questions.", len(chat_rows), len(eval_rows))
 
     # Inserta columna 'Chatbot Answer' (junto a Ideal si existe; si no, junto a Questions)
     dest_chat_col = (ia_col + 1) if ia_col else (q_col + 1)
@@ -485,7 +557,7 @@ def build_metrics_workbook_llm(
     # ---------- Llamadas al LLM (con cache y paralelización opcional) ----------
     cache_path = evaluator_dir / ".llm_cache.json"
     cache: Dict[str, Dict] = {}
-    if not no_cache and cache_path.exists():  # Skip if --no-cache
+    if not no_cache and cache_path.exists():
         try:
             cache.update(json.loads(cache_path.read_text(encoding="utf-8")))
             logger.info("Cache LLM cargada (%d entradas).", len(cache))
