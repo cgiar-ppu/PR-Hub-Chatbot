@@ -399,6 +399,7 @@ def build_metrics_workbook_llm(
     enable_fuzzy: bool = True,
     max_tokens: int = 300,
     temperature: float = 0.0,
+    no_cache: bool = False,  # New param to skip cache
 ) -> Path:
     src_path = evaluator_dir / "Evaluator questions.xlsx"
     if not src_path.exists():
@@ -484,7 +485,7 @@ def build_metrics_workbook_llm(
     # ---------- Llamadas al LLM (con cache y paralelización opcional) ----------
     cache_path = evaluator_dir / ".llm_cache.json"
     cache: Dict[str, Dict] = {}
-    if cache_path.exists():
+    if not no_cache and cache_path.exists():  # Skip if --no-cache
         try:
             cache.update(json.loads(cache_path.read_text(encoding="utf-8")))
             logger.info("Cache LLM cargada (%d entradas).", len(cache))
@@ -513,7 +514,7 @@ def build_metrics_workbook_llm(
     def _eval_job(item):
         r_eval, q, ideal, chatbot = item
         sc, score, notes = call_openai_evaluator(
-            q, ideal, chatbot, model=model, temperature=temperature, max_tokens=max_tokens, cache=cache
+            q, ideal, chatbot, model=model, temperature=temperature, max_tokens=max_tokens, cache=(cache if not no_cache else None)  # Pass None if --no-cache
         )
         return r_eval, sc, score, notes
 
@@ -575,11 +576,12 @@ def build_metrics_workbook_llm(
     summary_ws["A8"] = "Fuzzy Threshold";              summary_ws["B8"] = fuzzy_threshold if enable_fuzzy else "Disabled"
     summary_ws["A9"] = "Run Timestamp";                summary_ws["B9"] = datetime.datetime.now().isoformat(timespec="seconds")
 
-    # Guardar cache
-    try:
-        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        logger.warning("No se pudo escribir la cache LLM.")
+    # Guardar cache (skip if --no-cache)
+    if not no_cache:
+        try:
+            cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            logger.warning("No se pudo escribir la cache LLM.")
 
     # Guardar archivo de salida
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -609,6 +611,7 @@ def parse_args(argv: List[str]):
     parser.add_argument("--evaluator-dir", default=None)
     parser.add_argument("--max-tokens", type=int, default=300)
     parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--no-cache", action="store_true", help="Ignore LLM cache and force fresh evaluations")
     return parser.parse_args(argv[1:])
 
 def main(argv: List[str]) -> None:
@@ -626,6 +629,7 @@ def main(argv: List[str]) -> None:
             enable_fuzzy=(not args.no_fuzzy),
             max_tokens=int(args.max_tokens),
             temperature=float(args.temperature),
+            no_cache=args.no_cache,  # Pass the new flag
         )
         logger.info("Done. Metrics (LLM): %s", path)
     else:

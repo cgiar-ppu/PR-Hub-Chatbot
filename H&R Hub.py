@@ -21,6 +21,7 @@ import hashlib
 from dataclasses import asdict
 
 from datetime import datetime
+import json
 
 CGIAR_COLORS = {
     "green_primary": "#427730",      # Corporate Green
@@ -487,7 +488,7 @@ def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10
     return lines
 
 
-def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5, custom_system_msg: Optional[str] = None) -> Optional[str]:
+def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5, custom_system_msg: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     max_ctx = 12
     selected = ranked[:max_ctx]
     context_blocks: List[str] = []
@@ -515,43 +516,43 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
         f"Question: {query}\n\nContext:{context}"
     )
 
+    messages = [
+        {"role": "system", "content": system_msg},
+        {"role": "user", "content": user_msg},
+    ]
+    full_input = json.dumps(messages, ensure_ascii=False)
+
     try:
         api_key = os.environ.get("OPENAI_API_KEY", "").strip()
         if not api_key:
-            return None
+            return (None, full_input)
         client = OpenAI(api_key=api_key)
         try:
             resp = client.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": user_msg},
-                ],
+                messages=messages,
                 temperature=0,
                 max_tokens=5000,
             )
-            return (resp.choices[0].message.content or "").strip()
+            return ((resp.choices[0].message.content or "").strip(), full_input)
         except Exception:
             try:
                 resp2 = client.responses.create(
                     model="gpt-4o-mini",
-                    input=[
-                        {"role": "system", "content": system_msg},
-                        {"role": "user", "content": user_msg},
-                    ],
+                    input=messages,
                     temperature=0,
                     max_output_tokens=5000,
                 )
                 if hasattr(resp2, "output") and resp2.output and hasattr(resp2.output[0], "content"):
                     parts = resp2.output[0].content
                     if parts and hasattr(parts[0], "text"):
-                        return (parts[0].text or "").strip()
+                        return ((parts[0].text or "").strip(), full_input)
             except Exception:
-                return None
+                return (None, full_input)
     except Exception:
-        return None
+        return (None, full_input)
 
-    return None
+    return (None, full_input)
 
 
 def dedupe_preserve_order(items: List[str], limit: int = 5) -> List[str]:
@@ -683,7 +684,7 @@ def render_app() -> None:
         ranked = rank_chunks(query, vectorizer, matrix, chunks, top_k=top_k)
 
         # Try OpenAI (if API key present) per your rules
-        ai_answer = call_openai_generate(query, ranked, max_sentences=5, custom_system_msg=st.session_state.get('system_prompt'))
+        ai_answer, openai_input = call_openai_generate(query, ranked, max_sentences=5, custom_system_msg=st.session_state.get('system_prompt'))
 
         # Answer card
         if ai_answer is None or not ai_answer.strip():
@@ -717,33 +718,23 @@ def render_app() -> None:
         ranked_chunk_details = ', '.join([f"{c.id}:{score:.3f}" for c, score in ranked])
 
         log_entry = {
-
             'timestamp': datetime.now().isoformat(),
-
             'query': query,
-
             'top_k': top_k,
-
             'num_ranked': len(ranked),
-
             'ai_used': bool(ai_answer and ai_answer.strip()),
-
             'system_prompt': st.session_state.system_prompt,
-
             'ranked_chunks': ranked_chunk_details,
-
             'answer': ai_answer if bool(ai_answer and ai_answer.strip()) else answer,
-
-            'sources': ', '.join(format_sources_lines(ranked, max_items=10))
-
+            'sources': ', '.join(format_sources_lines(ranked, max_items=10)),
+            'retrieved_chunks_text': '\n\n---\n\n'.join(f"[ID: {c.id}]\n{c.text}" for c, _ in ranked),
+            'openai_input': openai_input or ''
         }
 
         df_log = pd.DataFrame([log_entry])
 
         if os.path.exists(log_file):
-
             existing = pd.read_excel(log_file)
-
             df_log = pd.concat([existing, df_log], ignore_index=True)
 
         df_log.to_excel(log_file, index=False)
