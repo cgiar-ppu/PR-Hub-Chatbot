@@ -20,6 +20,8 @@ import pickle
 import hashlib
 from dataclasses import asdict
 
+from datetime import datetime
+
 CGIAR_COLORS = {
     "green_primary": "#427730",      # Corporate Green
     "green_leaf": "#7AB800",         # Leaf green
@@ -525,7 +527,7 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
                     {"role": "system", "content": system_msg},
                     {"role": "user", "content": user_msg},
                 ],
-                temperature=0.1,
+                temperature=0,
                 max_tokens=5000,
             )
             return (resp.choices[0].message.content or "").strip()
@@ -537,7 +539,7 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
                         {"role": "system", "content": system_msg},
                         {"role": "user", "content": user_msg},
                     ],
-                    temperature=0.1,
+                    temperature=0,
                     max_output_tokens=5000,
                 )
                 if hasattr(resp2, "output") and resp2.output and hasattr(resp2.output[0], "content"):
@@ -707,6 +709,44 @@ def render_app() -> None:
             # Reinforce sources section with our TF-IDF ranking
             st.caption("Top sources (from TF-IDF ranking):")
             render_sources_pills(format_sources_lines(ranked, max_items=10))
+
+        # Logging interaction
+
+        log_file = os.path.join(project_root, 'Logs', 'interaction_log.xlsx')
+
+        ranked_chunk_details = ', '.join([f"{c.id}:{score:.3f}" for c, score in ranked])
+
+        log_entry = {
+
+            'timestamp': datetime.now().isoformat(),
+
+            'query': query,
+
+            'top_k': top_k,
+
+            'num_ranked': len(ranked),
+
+            'ai_used': bool(ai_answer and ai_answer.strip()),
+
+            'system_prompt': st.session_state.system_prompt,
+
+            'ranked_chunks': ranked_chunk_details,
+
+            'answer': ai_answer if bool(ai_answer and ai_answer.strip()) else answer,
+
+            'sources': ', '.join(format_sources_lines(ranked, max_items=10))
+
+        }
+
+        df_log = pd.DataFrame([log_entry])
+
+        if os.path.exists(log_file):
+
+            existing = pd.read_excel(log_file)
+
+            df_log = pd.concat([existing, df_log], ignore_index=True)
+
+        df_log.to_excel(log_file, index=False)
 
     # Footer
     st.markdown(
