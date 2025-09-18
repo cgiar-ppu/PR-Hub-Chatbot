@@ -799,6 +799,7 @@ def render_app() -> None:
             existing = pd.read_excel(log_file)
             df_log = pd.concat([existing, df_log], ignore_index=True)
 
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
         df_log.to_excel(log_file, index=False)
 
     # Footer
