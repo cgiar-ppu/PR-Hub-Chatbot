@@ -503,7 +503,25 @@ def extract_relevant_sentences(query: str, texts: List[str], max_sentences: int 
     return unique
 
 
-def compose_answer(query: str, ranked: List[Tuple[Chunk, float]]) -> Tuple[str, List[str]]:
+def load_name_to_link(project_root: str) -> Dict[str, str]:
+    excel_path = os.path.join(project_root, 'Docs & Links', 'Docs & Links - Chatbot P&R Hub.xlsx')
+    if not os.path.exists(excel_path):
+        return {}
+    df = pd.read_excel(excel_path)
+    name_col = 'NAME DOCUMENT'
+    link_col = 'LINKS'
+    if name_col not in df.columns or link_col not in df.columns:
+        return {}
+    mapping = {}
+    for _, row in df.iterrows():
+        name = str(row[name_col]).strip()
+        link = str(row[link_col]).strip()
+        if name and link:
+            mapping[name] = link
+    return mapping
+
+
+def compose_answer(query: str, ranked: List[Tuple[Chunk, float]], name_to_link: Dict[str, str] = {}) -> Tuple[str, List[str]]:
     if not ranked:
         msg = (
             "Not found in the available information. "
@@ -533,14 +551,14 @@ def compose_answer(query: str, ranked: List[Tuple[Chunk, float]]) -> Tuple[str, 
         sentences.extend(extra_sentences[: max(0, 3 - len(sentences))])
     sentences = sentences[:6]
     answer = " ".join(sentences).strip()
-    return answer, [f"{c.source_name} — {c.location} — {c.id}" for c, _ in ranked]
+    return answer, [f"{name_to_link.get(c.source_name, c.source_name)} — {c.location} — {c.id}" for c, _ in ranked]
 
 
-def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10) -> List[str]:
+def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10, name_to_link: Dict[str, str] = {}) -> List[str]:
     lines: List[str] = []
     seen = set()
     for c, _ in ranked:
-        entry = f"{c.source_name} — {c.location} — {c.id}"
+        entry = f"{name_to_link.get(c.source_name, c.source_name)} — {c.location} — {c.id}"
         if entry in seen:
             continue
         seen.add(entry)
@@ -550,13 +568,14 @@ def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10
     return lines
 
 
-def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5, custom_system_msg: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5, custom_system_msg: Optional[str] = None, name_to_link: Dict[str, str] = {}) -> Tuple[Optional[str], Optional[str]]:
     max_ctx = 12
     selected = ranked[:max_ctx]
     context_blocks: List[str] = []
     for c, _ in selected:
+        link = name_to_link.get(c.source_name, '')
         context_blocks.append(
-            f"[ID: {c.id}]\nFile: {c.source_name}\nLocation: {c.location}\nContent: {c.text}"
+            f"[ID: {c.id}]\nLink: {link if link else 'N/A'}\nFile: {c.source_name}\nLocation: {c.location}\nContent: {c.text}"
         )
     context = "\n\n---\n\n" + "\n\n---\n\n".join(context_blocks) if context_blocks else ""
 
@@ -570,7 +589,7 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
         "Output instructions:\n"
         "- 3 to 5 sentences, neutral and direct style, no lists.\n"
         "- ALWAYS answer in English and adapt wording to the question's context.\n"
-        "- End with the literal 'Sources:' and then, as a list, each line as 'File — Location — Cited IDs'.\n"
+        "- End with the literal 'Sources:' and then, as a list, up to 3 lines each as 'Link — Location — Cited IDs' (use the Link if provided in context, otherwise the File).\n"
         "- If insufficient evidence, return EXACTLY: 'I cannot find information in the provided chunks to answer this.'\n\n"
     )
 
@@ -629,12 +648,48 @@ def dedupe_preserve_order(items: List[str], limit: int = 5) -> List[str]:
             break
     return out
 
-def render_sources_pills(lines):
+def make_clickable_entry(entry: str) -> str:
+    parts = entry.split(" — ", 2)
+    if len(parts) < 3:
+        return html.escape(entry)
+    link, location, cited_id = parts
+    if link.startswith("http://") or link.startswith("https://"):
+        escaped_link = html.escape(link)
+        return f'<a href="{escaped_link}" target="_blank" rel="noopener noreferrer">{escaped_link}</a> — {html.escape(location)} — {html.escape(cited_id)}'
+    else:
+        return html.escape(entry)
+
+def render_sources_pills(lines: List[str]):
     if not lines:
         st.markdown("<div class='sources-wrap'><span class='source-chip'>not specified</span></div>", unsafe_allow_html=True)
         return
-    pills = "".join(f"<span class='source-chip'>{html.escape(line)}</span>" for line in lines)
+    clickable_lines = [make_clickable_entry(line) for line in lines]
+    pills = "".join(f"<span class='source-chip'>{pill}</span>" for pill in clickable_lines)
     st.markdown(f"<div class='sources-wrap'>{pills}</div>", unsafe_allow_html=True)
+
+def render_sources_table(lines: List[str]):
+    if not lines:
+        st.markdown("<p>No sources available.</p>", unsafe_allow_html=True)
+        return
+
+    table_html = '<style>.sources-table{width:100%;border-collapse:collapse;margin-top:0.5rem;}.sources-table th,.sources-table td{border:1px solid #e1efe4;padding:0.5rem;text-align:left;font-size:0.85rem;}.sources-table th{background:#f2f7f3;color:#0f3b1f;}.sources-table .link-cell{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.sources-table a{color:#0065BD;text-decoration:none;}.sources-table a:hover{text-decoration:underline;}</style><table class="sources-table"><thead><tr><th>Link</th><th>Location</th><th>ID</th></tr></thead><tbody>'
+
+    for line in lines:
+        parts = line.split(" — ", 2)
+        if len(parts) < 3:
+            continue
+        link, location, cited_id = parts
+        escaped_location = html.escape(location)
+        escaped_id = html.escape(cited_id)
+        if link.startswith("http://") or link.startswith("https://"):
+            escaped_link = html.escape(link)
+            link_html = f'<a href="{escaped_link}" target="_blank" rel="noopener noreferrer" class="link-cell">{escaped_link}</a>'
+        else:
+            link_html = f'<span class="link-cell">{html.escape(link)}</span>'
+        table_html += f'<tr><td>{link_html}</td><td>{escaped_location}</td><td>{escaped_id}</td></tr>'
+
+    table_html += '</tbody></table>'
+    st.markdown(table_html, unsafe_allow_html=True)
 
 def render_app() -> None:
     st.set_page_config(page_title="P&R Hub — RAG (CGIAR)", page_icon="🌿", layout="centered")
@@ -659,16 +714,13 @@ def render_app() -> None:
         st.write("- Place your **PDF/DOCX/PPTX** in the project folder.")
         st.write("- Ask a specific question.")
         st.write("- Adjust the number of chunks if you need more/less context.")
-        st.markdown("---")
-        st.markdown("**Examples**")
-        st.caption("• What evidence architecture and rigor standards underpin the report’s claims? Summarize the dataset, methods, and how to interpret causality.")
-        st.markdown("---")
 
         st.markdown("---")
         with st.expander("Edit System Prompt"):
             st.session_state.system_prompt = st.text_area("Customize the system prompt for the AI:", value=st.session_state.system_prompt, height=300)
 
     project_root = os.path.dirname(os.path.abspath(__file__))
+    name_to_link = load_name_to_link(project_root)
     chunks_file = os.path.join(project_root, 'chunks.xlsx')
     index_file = os.path.join(project_root, 'index.pkl')
     hash_file = os.path.join(project_root, 'corpus_hash.txt')
@@ -746,11 +798,11 @@ def render_app() -> None:
         ranked = rank_chunks(query, vectorizer, matrix, chunks, top_k=top_k)
 
         # Try OpenAI (if API key present) per your rules
-        ai_answer, openai_input = call_openai_generate(query, ranked, max_sentences=5, custom_system_msg=st.session_state.get('system_prompt'))
+        ai_answer, openai_input = call_openai_generate(query, ranked, max_sentences=5, custom_system_msg=st.session_state.get('system_prompt'), name_to_link=name_to_link)
 
         # Answer card
         if ai_answer is None or not ai_answer.strip():
-            answer, sources_all = compose_answer(query, ranked)
+            answer, sources_all = compose_answer(query, ranked, name_to_link=name_to_link)
 
             # Keep answer compact
             unavailable = answer.startswith("I cannot find information in the provided chunks to answer this.") or \
@@ -762,16 +814,23 @@ def render_app() -> None:
 
             st.markdown(f"<div class='card answer-card'>{html.escape(answer)}</div>", unsafe_allow_html=True)
 
-            # Source chips (de-duplicated, max 10)
-            render_sources_pills(dedupe_preserve_order(sources_all, limit=10))
+            # Removed direct sources rendering
         else:
-            # Model already returns text + "Sources:"; present it in a card
-            safe = html.escape(ai_answer).replace("\n", "<br>")
-            st.markdown(f"<div class='card answer-card'>{safe}</div>", unsafe_allow_html=True)
+            # For AI answer, only show the body, ignore AI sources
+            if 'Sources:' in ai_answer:
+                body = ai_answer.split('Sources:', 1)[0].strip()
+            else:
+                body = ai_answer.strip()
 
-            # Reinforce sources section with our TF-IDF ranking
-            st.caption("Top sources (from TF-IDF ranking):")
-            render_sources_pills(format_sources_lines(ranked, max_items=10))
+            safe_body = html.escape(body).replace("\n", "<br>")
+            st.markdown(f"<div class='card answer-card'>{safe_body}</div>", unsafe_allow_html=True)
+
+            # Removed AI sources rendering
+
+        # Always show TF-IDF sources in table
+        st.caption("Top sources (from TF-IDF ranking):")
+        tfidf_sources = format_sources_lines(ranked, max_items=3, name_to_link=name_to_link)
+        render_sources_table(tfidf_sources)
 
         # Logging interaction
 
@@ -788,7 +847,7 @@ def render_app() -> None:
             'system_prompt': st.session_state.system_prompt,
             'ranked_chunks': ranked_chunk_details,
             'answer': ai_answer if bool(ai_answer and ai_answer.strip()) else answer,
-            'sources': ', '.join(format_sources_lines(ranked, max_items=10)),
+            'sources': ', '.join(format_sources_lines(ranked, max_items=3, name_to_link=name_to_link)),
             'retrieved_chunks_text': '\n\n---\n\n'.join(f"[ID: {c.id}]\n{c.text}" for c, _ in ranked),
             'openai_input': openai_input or ''
         }
