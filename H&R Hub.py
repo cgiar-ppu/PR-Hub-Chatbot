@@ -22,6 +22,7 @@ from dataclasses import asdict
 
 from datetime import datetime
 import json
+from urllib.parse import urlparse
 
 CGIAR_COLORS = {
     "green_primary": "#427730",      # Corporate Green
@@ -672,7 +673,7 @@ def render_sources_table(lines: List[str]):
         st.markdown("<p>No sources available.</p>", unsafe_allow_html=True)
         return
 
-    table_html = '<style>.sources-table{width:100%;border-collapse:collapse;margin-top:0.5rem;}.sources-table th,.sources-table td{border:1px solid #e1efe4;padding:0.5rem;text-align:left;font-size:0.85rem;}.sources-table th{background:#f2f7f3;color:#0f3b1f;}.sources-table .link-cell{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.sources-table a{color:#0065BD;text-decoration:none;}.sources-table a:hover{text-decoration:underline;}</style><table class="sources-table"><thead><tr><th>Link</th><th>Location</th><th>ID</th></tr></thead><tbody>'
+    table_html = '<style>.sources-table{width:auto;border-collapse:collapse;margin-top:0.5rem;}.sources-table th,.sources-table td{border:1px solid #e1efe4;padding:0.2rem;text-align:left;font-size:0.7rem;}.sources-table th{background:#f2f7f3;color:#0f3b1f;}.sources-table .link-cell{max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.sources-table a{color:#0065BD;text-decoration:none;}.sources-table a:hover{text-decoration:underline;}</style><table class="sources-table"><thead><tr><th>Link</th><th>Location</th><th>ID</th></tr></thead><tbody>'
 
     for line in lines:
         parts = line.split(" — ", 2)
@@ -829,8 +830,36 @@ def render_app() -> None:
 
         # Always show TF-IDF sources in table
         st.caption("Top sources (from TF-IDF ranking):")
-        tfidf_sources = format_sources_lines(ranked, max_items=3, name_to_link=name_to_link)
-        render_sources_table(tfidf_sources)
+
+        data = []
+        for c, score in ranked[:5]:
+            fuente = c.source_name
+            full_link = name_to_link.get(c.source_name, '')
+            if not (full_link.startswith('http://') or full_link.startswith('https://')):
+                full_link = ''
+            data.append({'Fuente': fuente, 'Link': full_link})
+
+        df = pd.DataFrame(data)
+
+        st.markdown("<style> div[data-testid=\"stDataFrame\"] {font-size: 12px;} </style>", unsafe_allow_html=True)
+
+        st.dataframe(
+            df,
+            width=500,
+            hide_index=True,
+            column_config={
+                "Fuente": st.column_config.TextColumn("Fuente", width="medium"),
+                "Link": st.column_config.LinkColumn(
+                    "Link 🔗",
+                    width=110,
+                    display_text=r"^(?:https?://)?([^/]+)",
+                    max_chars=20,
+                ),
+            },
+        )
+
+        if len(ranked) > 5:
+            st.text("Ver todas")
 
         # Logging interaction
 
