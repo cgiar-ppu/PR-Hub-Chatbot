@@ -682,12 +682,14 @@ def render_sources_table(lines: List[str]):
         link, location, cited_id = parts
         escaped_location = html.escape(location)
         escaped_id = html.escape(cited_id)
-        if link.startswith("http://") or link.startswith("https://"):
-            escaped_link = html.escape(link)
-            link_html = f'<a href="{escaped_link}" target="_blank" rel="noopener noreferrer" class="link-cell">{escaped_link}</a>'
+        full_link = name_to_link.get(link, '')
+        if full_link.startswith('http'):
+            escaped_link = html.escape(full_link)
+            link_html = f'<a href="{escaped_link}" target="_blank" rel="noopener noreferrer">{escaped_link}</a>'
         else:
-            link_html = f'<span class="link-cell">{html.escape(link)}</span>'
-        table_html += f'<tr><td>{link_html}</td><td>{escaped_location}</td><td>{escaped_id}</td></tr>'
+            link_html = html.escape(full_link)
+        row_html = f'<tr><td class="link-cell">{link_html}</td><td>{escaped_location}</td><td>{escaped_id}</td></tr>'
+        table_html += row_html
 
     table_html += '</tbody></table>'
     st.markdown(table_html, unsafe_allow_html=True)
