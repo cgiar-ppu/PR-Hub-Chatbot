@@ -570,7 +570,7 @@ def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10
 
 
 def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5, custom_system_msg: Optional[str] = None, name_to_link: Dict[str, str] = {}) -> Tuple[Optional[str], Optional[str]]:
-    max_ctx = 12
+    max_ctx = 20
     selected = ranked[:max_ctx]
     context_blocks: List[str] = []
     for c, _ in selected:
@@ -678,7 +678,7 @@ def render_sources_table(lines: List[str]):
         link, location, cited_id = parts
         escaped_location = html.escape(location)
         escaped_id = html.escape(cited_id)
-        full_link = name_to_link.get(link, '')
+        full_link = globals().get('name_to_link', {}).get(link, link)
         if full_link.startswith('http'):
             escaped_link = html.escape(full_link)
             link_html = f'<a href="{escaped_link}" target="_blank" rel="noopener noreferrer">{escaped_link}</a>'
@@ -724,6 +724,7 @@ def render_app() -> None:
             st.session_state.system_prompt = st.text_area("Customize the system prompt for the AI:", value=st.session_state.system_prompt, height=300)
 
     project_root = os.path.dirname(os.path.abspath(__file__))
+    global name_to_link
     name_to_link = load_name_to_link(project_root)
     chunks_file = os.path.join(project_root, 'chunks.xlsx')
     index_file = os.path.join(project_root, 'index.pkl')
