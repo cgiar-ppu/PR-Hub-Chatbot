@@ -282,6 +282,15 @@ def read_docx_chunks(path: str) -> List[Chunk]:
             location = f"section '{current_section}' paragraph {paragraph_index}" if current_section else f"paragraph {paragraph_index}"
             unit_texts.append(text)
             unit_locations.append(location)
+        for t_idx, table in enumerate(doc.tables, start=1):
+            for r_idx, row in enumerate(table.rows, start=1):
+                cells = [normalize_whitespace(cell.text or "") for cell in row.cells]
+                cells = [c for c in cells if c]  # quita celdas vacías
+                if cells:
+                    unit_texts.append(" | ".join(cells))
+                    unit_locations.append(
+                        f"{'section ' + repr(current_section) + ' ' if current_section else ''}table {t_idx} row {r_idx}"
+                    )
         return create_overlapped_chunks(unit_texts, unit_locations, os.path.basename(path), "docx", path)
     except Exception:
         pass
@@ -443,7 +452,7 @@ def build_index(chunks: List[Chunk]) -> Tuple[TfidfVectorizer, any]:
         vectorizer.fit(["dummy"])
         matrix = vectorizer.transform(["dummy"])
         return vectorizer, matrix
-    vectorizer = TfidfVectorizer(stop_words=None, max_df=0.9)
+    vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3,5), max_df=0.95)
     matrix = vectorizer.fit_transform(texts)
     return vectorizer, matrix
 
@@ -465,15 +474,16 @@ def rank_chunks(query: str, vectorizer: TfidfVectorizer, matrix, chunks: List[Ch
         return []
     q_vec = vectorizer.transform([query])
     sims = cosine_similarity(q_vec, matrix)[0]
-    idx_scores = sorted(enumerate(sims), key=lambda x: x[1], reverse=True)
-    results: List[Tuple[Chunk, float]] = []
-    for idx, score in idx_scores[: max(top_k * 2, top_k)]:
-        if score <= 0.02:
-            continue
-        results.append((chunks[idx], float(score)))
-        if len(results) >= top_k:
+
+    scored = [(idx, float(s)) for idx, s in enumerate(sims) if s > 0.005]
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    out: List[Tuple[Chunk, float]] = []
+    for idx, s in scored[: max(top_k * 2, top_k)]:
+        out.append((chunks[idx], s))
+        if len(out) >= top_k:
             break
-    return results
+    return out
 
 
 def extract_relevant_sentences(query: str, texts: List[str], max_sentences: int = 6) -> List[str]:
@@ -532,6 +542,10 @@ def compose_answer(query: str, ranked: List[Tuple[Chunk, float]], name_to_link: 
         return msg, []
     texts = [c.text for c, _ in ranked]
     sentences = extract_relevant_sentences(query, texts, max_sentences=6)
+
+    if len(sentences) == 0 and texts:
+        sentences = split_sentences(texts[0])[:6]
+
     if len(sentences) == 0:
         msg = (
             "Not found in the available information. "
@@ -552,7 +566,7 @@ def compose_answer(query: str, ranked: List[Tuple[Chunk, float]], name_to_link: 
         sentences.extend(extra_sentences[: max(0, 3 - len(sentences))])
     sentences = sentences[:6]
     answer = " ".join(sentences).strip()
-    return answer, [f"{name_to_link.get(c.source_name, c.source_name)} — {c.location} — {c.id}" for c, _ in ranked]
+    return answer, [f"{name_to_link.get(c.source_name, c.source_name)} — {c.location} — {c.id}" for c, _ in ranked] 
 
 
 def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10, name_to_link: Dict[str, str] = {}) -> List[str]:
@@ -570,7 +584,7 @@ def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10
 
 
 def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5, custom_system_msg: Optional[str] = None, name_to_link: Dict[str, str] = {}) -> Tuple[Optional[str], Optional[str]]:
-    max_ctx = 20
+    max_ctx = 30
     selected = ranked[:max_ctx]
     context_blocks: List[str] = []
     for c, _ in selected:
@@ -723,17 +737,23 @@ def render_app() -> None:
         with st.expander("Edit System Prompt"):
             st.session_state.system_prompt = st.text_area("Customize the system prompt for the AI:", value=st.session_state.system_prompt, height=300)
 
+        force_reindex = st.checkbox(
+            "♻️ Rebuild index (ignore cache)",
+            value=False,
+            help="Ignore the cache and rebuild the index."
+        )
+
     project_root = os.path.dirname(os.path.abspath(__file__))
     global name_to_link
     name_to_link = load_name_to_link(project_root)
     chunks_file = os.path.join(project_root, 'chunks.xlsx')
-    index_file = os.path.join(project_root, 'index.pkl')
-    hash_file = os.path.join(project_root, 'corpus_hash.txt')
+    index_file  = os.path.join(project_root, 'index.pkl')
+    hash_file   = os.path.join(project_root, 'corpus_hash.txt')
 
     current_hash = get_corpus_hash(project_root)
 
     load_from_cache = False
-    if all(os.path.exists(f) for f in [hash_file, chunks_file, index_file]):
+    if (not force_reindex) and all(os.path.exists(p) for p in [hash_file, chunks_file, index_file]):
         with open(hash_file, 'r') as f:
             saved_hash = f.read().strip()
         if saved_hash == current_hash:
