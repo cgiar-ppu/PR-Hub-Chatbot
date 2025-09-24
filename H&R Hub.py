@@ -581,9 +581,9 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
     context = "\n\n---\n\n" + "\n\n---\n\n".join(context_blocks) if context_blocks else ""
 
     system_msg = custom_system_msg if custom_system_msg is not None else (
-    "You are a RAG assistant. "
-    "ALWAYS answer in English, regardless of the user's language. Preserve acronyms EXACTLY as written. "
-    "If the information is not obtainable, respond with the exact phrase: 'I cannot find information in the provided chunks to answer this.'"
+    "You are a RAG assistant for deeper research. "
+    "Preserve acronyms EXACTLY as written. "
+    "Exactly phrase: 'I cannot find information in the provided chunks to answer this.'"
     "Output instructions:\n"
     "- 3 to 5 sentences, neutral and direct style, no lists.\n"
     "- ALWAYS answer in English and adapt wording to the question's context.\n"
@@ -694,15 +694,15 @@ def render_app() -> None:
     st.set_page_config(page_title="P&R Hub — RAG (CGIAR)", page_icon="🌿", layout="centered")
     apply_cgiar_theme()
 
-DEFAULT_SYSTEM_PROMPT: str = (
-    "You are a RAG assistant. Preserve acronyms EXACTLY as written. ALWAYS answer in English, regardless of the user's language. "
-    "If the information is not obtainable, respond with the exact phrase: 'I cannot find information in the provided chunks to answer this.' "
-    "Output instructions: - 3 to 5 sentences, neutral and direct style, no lists. "
-    "- ALWAYS answer in English and adapt wording to the question's context. "
-    "- End with the literal 'Sources:' and then, as a list, each line as 'File — Location — Cited IDs'."
-)
-if 'system_prompt' not in st.session_state:
-    st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
+    DEFAULT_SYSTEM_PROMPT: str = (
+        "You are a RAG assistant for deeper research. Preserve acronyms EXACTLY as written. "
+        "Exactly phrase: 'I cannot find information in the provided chunks to answer this.' "
+        "Output instructions: - 3 to 5 sentences, neutral and direct style, no lists. "
+        "- ALWAYS answer in English and adapt wording to the question's context. "
+        "- End with the literal 'Sources:' and then, as a list, each line as 'File — Location — Cited IDs'."
+    )
+    if 'system_prompt' not in st.session_state:
+        st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
 
     # Hero header (solid amber + new title)
     st.markdown("""
