@@ -584,8 +584,8 @@ def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10
 
 
 def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5, custom_system_msg: Optional[str] = None, name_to_link: Dict[str, str] = {}) -> Tuple[Optional[str], Optional[str]]:
-    max_ctx = 30
-    selected = ranked[:max_ctx]
+    
+    selected = ranked
     context_blocks: List[str] = []
     for c, _ in selected:
         link = name_to_link.get(c.source_name, '')
