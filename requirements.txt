@@ -3,6 +3,8 @@ streamlit
 openai
 scikit-learn
 numpy
+sentence-transformers
+torch
 
 # Document processing
 pypdf
