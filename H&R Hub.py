@@ -733,7 +733,9 @@ def render_app() -> None:
     st.markdown("""
         <div class="brand-hero">
             <h1>P&R Hub — Chatbot</h1>
-            <p><strong>Purpose: This ChatBot was developed to support Programs and Accelerators, Centers, and MELIA Focal Points in easily accessing key information related to Planning and Technical Reporting. Its goal is to help users find guidance, tools, and resources that assist in planning, monitoring, and reporting results efficiently. \n<strong>Acknowledgement: This ChatBot uses Artificial Intelligence (AI) to understand questions and provide automated responses. While the models have been tested to ensure reliable and accurate information, AI-generated answers may occasionally contain errors or inaccuracies. If a response appears incorrect or unclear, please always refer to the official information available on the P&R Hub.</p>
+            <p style="font-size: 0.9rem; text-align: justify;"><strong>PURPOSE: </strong>This ChatBot was developed to support Programs and Accelerators, Centers, and MELIA Focal Points in easily accessing key information related to Planning and Technical Reporting. Its goal is to help users find guidance, tools, and resources that assist in planning, monitoring, and reporting results efficiently.</p>
+            <p style="margin-bottom: 1rem;"></p>
+            <p style="font-size: 0.9rem; text-align: justify;"><strong>ACKNOWLEDGMENT: </strong>This ChatBot uses Artificial Intelligence (AI) to understand questions and provide automated responses. While the models have been tested to ensure reliable and accurate information, AI-generated answers may occasionally contain errors or inaccuracies. If a response appears incorrect or unclear, please always refer to the official information available on the P&R Hub.</p>
         </div>
     """, unsafe_allow_html=True)
 
