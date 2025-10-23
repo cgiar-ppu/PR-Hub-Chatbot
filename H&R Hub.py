@@ -744,7 +744,6 @@ def render_app() -> None:
         st.markdown("### ❓ Quick help")
         st.write("- Place your **PDF/DOCX/PPTX** in the project folder.")
         st.write("- Ask a specific question.")
-        st.write("- Adjust the number of chunks if you need more/less context.")
 
         st.markdown("---")
         with st.expander("Edit System Prompt"):
