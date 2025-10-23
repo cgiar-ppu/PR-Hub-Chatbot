@@ -793,47 +793,21 @@ def render_app() -> None:
         with open(hash_file, 'w') as f:
             f.write(current_hash)
 
-    num_docs = len({c.source_path for c in chunks})
-    num_chunks = len(chunks)
+        num_chunks = len(chunks)
 
-    # Metric cards
-    cols = st.columns(2, gap="small")
-
-    with cols[0]:
-        st.markdown(f"""
-        <div class="card" style="display:flex;align-items:center;gap:.65rem">
-        <span style="font-size:1.35rem">📄</span>
-        <div>
-            <div style="font-size:.8rem;color:var(--muted)">Loaded documents</div>
-            <div style="font-weight:700">{num_docs}</div>
-        </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with cols[1]:
-        st.markdown(f"""
-        <div class="card" style="display:flex;align-items:center;gap:.65rem">
-        <span style="font-size:1.35rem">🧩</span>
-        <div>
-            <div style="font-size:.8rem;color:var(--muted)">Indexed chunks</div>
-            <div style="font-weight:700">{num_chunks}</div>
-        </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    if num_chunks == 0:
-        st.warning(
-            "No compatible documents (.pdf, .docx, .pptx) were found in the project. "
-            "Add files to the existing folders and reload."
-        )
+        if num_chunks == 0:
+            st.warning(
+                "No compatible documents (.pdf, .docx, .pptx) were found in the project. "
+                "Add files to the existing folders and reload."
+            )
 
     # Search area as a form
     with st.form("ask_form", clear_on_submit=False):
         query = st.text_input("Type your question:", value="", placeholder="e.g., What is the grievance procedure timeline?")
-        top_k = st.slider("Number of chunks to consider", min_value=20, max_value=200, value=100, help="Higher values = more recall, slightly slower.")
         submitted = st.form_submit_button("🔎 Search", use_container_width=True)
 
     if submitted:
+        top_k = 200
         model = get_embedding_model()
         ranked = rank_chunks(query, model, embeddings, chunks, top_k=top_k)
 
