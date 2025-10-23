@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
 
 import streamlit as st
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from pypdf import PdfReader
@@ -19,10 +18,15 @@ import pandas as pd
 import pickle
 import hashlib
 from dataclasses import asdict
+import numpy as np
+import torch
+from sentence_transformers import SentenceTransformer
 
 from datetime import datetime
 import json
 from urllib.parse import urlparse
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 CGIAR_COLORS = {
     "green_primary": "#427730",      # Corporate Green
@@ -185,6 +189,21 @@ def apply_cgiar_theme():
         }}
     </style>
     """, unsafe_allow_html=True)
+
+@st.cache_resource
+def get_embedding_model() -> SentenceTransformer:
+    model_name = 'all-MiniLM-L6-v2'
+    model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'sentence_transformer')
+    os.makedirs(model_dir, exist_ok=True)
+    try:
+        model = SentenceTransformer(model_dir)
+    except Exception:
+        model = SentenceTransformer(model_name)
+        try:
+            model.save(model_dir)
+        except Exception:
+            pass
+    return model.to(device)
 
 @dataclass
 class Chunk:
@@ -445,16 +464,18 @@ def load_corpus(root_dir: str,
     return chunks
 
 
-def build_index(chunks: List[Chunk]) -> Tuple[TfidfVectorizer, any]:
+def build_embeddings_index(chunks: List[Chunk]) -> np.ndarray:
+    model = get_embedding_model()
     texts = [c.text for c in chunks]
-    if not texts:
-        vectorizer = TfidfVectorizer(stop_words=None)
-        vectorizer.fit(["dummy"])
-        matrix = vectorizer.transform(["dummy"])
-        return vectorizer, matrix
-    vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3,5), max_df=0.95)
-    matrix = vectorizer.fit_transform(texts)
-    return vectorizer, matrix
+    if len(texts) == 0:
+        try:
+            dim = model.get_sentence_embedding_dimension()
+        except Exception:
+            dim = 384
+        return np.empty((0, dim), dtype=np.float32)
+    with st.spinner("Building semantic embeddings..."):
+        embs = model.encode(texts, show_progress_bar=True, device=device, normalize_embeddings=False)
+    return np.asarray(embs, dtype=np.float32)
 
 def get_corpus_hash(root_dir: str) -> str:
     hash_str = ''
@@ -469,13 +490,13 @@ def get_corpus_hash(root_dir: str) -> str:
             hash_str += f"{abspath}:{mtime}:{size}\n"
     return hashlib.sha256(hash_str.encode()).hexdigest()
 
-def rank_chunks(query: str, vectorizer: TfidfVectorizer, matrix, chunks: List[Chunk], top_k: int = 25) -> List[Tuple[Chunk, float]]:
-    if not query.strip():
+def rank_chunks(query: str, model: SentenceTransformer, embeddings: np.ndarray, chunks: List[Chunk], top_k: int = 25) -> List[Tuple[Chunk, float]]:
+    if not query.strip() or embeddings.shape[0] == 0:
         return []
-    q_vec = vectorizer.transform([query])
-    sims = cosine_similarity(q_vec, matrix)[0]
+    q_vec = model.encode([query], device=device, normalize_embeddings=False)
+    sims = cosine_similarity(q_vec, embeddings)[0]
 
-    scored = [(idx, float(s)) for idx, s in enumerate(sims) if s > 0.005]
+    scored = [(idx, float(s)) for idx, s in enumerate(sims) if s > 0.0]
 
     scored.sort(key=lambda x: x[1], reverse=True)
     out: List[Tuple[Chunk, float]] = []
@@ -595,7 +616,7 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
     context = "\n\n---\n\n" + "\n\n---\n\n".join(context_blocks) if context_blocks else ""
 
     system_msg = custom_system_msg if custom_system_msg is not None else (
-    "You are a helpful assistant that answer user questions"
+    "You are a helpful assistant that answer user questions in a detailed and comprehensive way."
 )
 
     user_msg = (
@@ -703,7 +724,7 @@ def render_app() -> None:
     apply_cgiar_theme()
 
     DEFAULT_SYSTEM_PROMPT: str = (
-        "You are a helpful assistant that answer user questions."
+        "You are a helpful assistant that answer user questions in a detailed and comprehensive way."
     )
     if 'system_prompt' not in st.session_state:
         st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
@@ -711,8 +732,8 @@ def render_app() -> None:
     # Hero header (solid amber + new title)
     st.markdown("""
         <div class="brand-hero">
-            <h1>P&R Hub — Document-grounded RAG assistant</h1>
-            <p>Answers strictly based on the documents in this project. Always include the <strong>Sources</strong> section.</p>
+            <h1>P&R Hub — Chatbot</h1>
+            <p><strong>Purpose: This ChatBot was developed to support Programs and Accelerators, Centers, and MELIA Focal Points in easily accessing key information related to Planning and Technical Reporting. Its goal is to help users find guidance, tools, and resources that assist in planning, monitoring, and reporting results efficiently. \n<strong>Acknowledgement: This ChatBot uses Artificial Intelligence (AI) to understand questions and provide automated responses. While the models have been tested to ensure reliable and accurate information, AI-generated answers may occasionally contain errors or inaccuracies. If a response appears incorrect or unclear, please always refer to the official information available on the P&R Hub.</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -749,23 +770,25 @@ def render_app() -> None:
         if saved_hash == current_hash:
             load_from_cache = True
 
+    embeddings: np.ndarray
     if load_from_cache:
         with st.spinner("Loading from cache..."):
             df = pd.read_excel(chunks_file)
             chunks = [Chunk(**row) for row in df.to_dict(orient='records')]
             with open(index_file, 'rb') as f:
                 data = pickle.load(f)
-            vectorizer = data['vectorizer']
-            matrix = data['matrix']
-    else:
+            if isinstance(data, dict) and 'embeddings' in data:
+                embeddings = np.asarray(data['embeddings'])
+            else:
+                load_from_cache = False
+    if not load_from_cache:
         with st.spinner("Loading documents..."):
             chunks = load_corpus(project_root)
         df = pd.DataFrame([asdict(c) for c in chunks])
         df.to_excel(chunks_file, index=False)
-        with st.spinner("Building index..."):
-            vectorizer, matrix = build_index(chunks)
+        embeddings = build_embeddings_index(chunks)
         with open(index_file, 'wb') as f:
-            pickle.dump({'vectorizer': vectorizer, 'matrix': matrix}, f)
+            pickle.dump({'embeddings': embeddings}, f)
         with open(hash_file, 'w') as f:
             f.write(current_hash)
 
@@ -810,7 +833,8 @@ def render_app() -> None:
         submitted = st.form_submit_button("🔎 Search", use_container_width=True)
 
     if submitted:
-        ranked = rank_chunks(query, vectorizer, matrix, chunks, top_k=top_k)
+        model = get_embedding_model()
+        ranked = rank_chunks(query, model, embeddings, chunks, top_k=top_k)
 
         # Try OpenAI (if API key present) per your rules
         ai_answer, openai_input = call_openai_generate(query, ranked, max_sentences=5, custom_system_msg=st.session_state.get('system_prompt'), name_to_link=name_to_link)
@@ -842,8 +866,8 @@ def render_app() -> None:
 
             # Removed AI sources rendering
 
-        # Always show TF-IDF sources in table
-        st.caption("Top sources (from TF-IDF ranking):")
+        # Always show semantic sources in table
+        st.caption("Top sources (semantic ranking):")
 
         data = []
         for c, score in ranked[:5]:
