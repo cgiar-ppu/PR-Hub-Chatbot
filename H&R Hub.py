@@ -719,6 +719,64 @@ def render_sources_table(lines: List[str]):
     table_html += '</tbody></table>'
     st.markdown(table_html, unsafe_allow_html=True)
 
+def load_sources_reference_map(project_root: str) -> Dict[str, Dict[str, str]]:
+    excel_path = os.path.join(project_root, 'reference', 'Sources - P&R Hub.xlsx')
+    if not os.path.exists(excel_path):
+        return {}
+    try:
+        df = pd.read_excel(excel_path)
+    except Exception:
+        return {}
+    required = ['NAME DOWNLOAD', 'Document Title', 'P&R Hub reference']
+    for col in required:
+        if col not in df.columns:
+            return {}
+    mapping: Dict[str, Dict[str, str]] = {}
+    for _, row in df.iterrows():
+        name_download = str(row['NAME DOWNLOAD']).strip()
+        title = str(row['Document Title']).strip() if pd.notna(row['Document Title']) else ''
+        pr_ref = str(row['P&R Hub reference']).strip() if pd.notna(row['P&R Hub reference']) else ''
+        if name_download:
+            mapping[name_download.lower()] = {
+                'title': title if title else name_download,
+                'ref': pr_ref if pr_ref else ''
+            }
+    return mapping
+
+def render_sources_leaderboard(ranked: List[Tuple[Chunk, float]], sources_ref_map: Dict[str, Dict[str, str]]):
+    if not ranked:
+        return
+    counts: Dict[str, int] = {}
+    for c, _ in ranked:
+        key = (c.source_name or '').strip()
+        if not key:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return
+    ordered = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:10]
+
+    rows: List[Tuple[str, str]] = []
+    for name_download, _cnt in ordered:
+        meta = sources_ref_map.get(name_download.lower()) if sources_ref_map else None
+        title = meta['title'] if meta and meta.get('title') else name_download
+        pr_ref = meta['ref'] if meta and meta.get('ref') else ''
+        rows.append((title, pr_ref))
+
+    if not rows:
+        return
+
+    # Build Markdown/HTML leaderboard with two columns and horizontal borders
+    parts: List[str] = []
+    parts.append('<style>.leaderboard{width:100%;border-collapse:collapse;margin:.5rem 0}.leaderboard thead th{font-size:.9rem;text-align:left;padding:.4rem 0;border-bottom:2px solid var(--border)}.leaderboard tbody tr{border-top:1px solid var(--border)}.leaderboard tbody td{padding:.5rem 0;font-size:.9rem}.leaderboard .title{font-weight:600}.leaderboard .ref{color:var(--muted)}</style>')
+    parts.append('<table class="leaderboard"><thead><tr><th>Document Title</th><th>P&R Hub reference</th></tr></thead><tbody>')
+    for title, pr_ref in rows:
+        safe_title = html.escape(title)
+        safe_ref = html.escape(pr_ref) if pr_ref else '&#8212;'
+        parts.append(f'<tr><td class="title">{safe_title}</td><td class="ref">{safe_ref}</td></tr>')
+    parts.append('</tbody></table>')
+    st.markdown("".join(parts), unsafe_allow_html=True)
+
 def render_app() -> None:
     st.set_page_config(page_title="P&R Hub — RAG (CGIAR)", page_icon="🌿", layout="centered")
     apply_cgiar_theme()
@@ -758,6 +816,7 @@ def render_app() -> None:
     project_root = os.path.dirname(os.path.abspath(__file__))
     global name_to_link
     name_to_link = load_name_to_link(project_root)
+    sources_ref_map = load_sources_reference_map(project_root)
     chunks_file = os.path.join(project_root, 'chunks.xlsx')
     index_file  = os.path.join(project_root, 'index.pkl')
     hash_file   = os.path.join(project_root, 'corpus_hash.txt')
@@ -826,7 +885,7 @@ def render_app() -> None:
                 if len(sents) > 6:
                     answer = " ".join(sents[:6]).strip()
 
-            st.markdown(f"<div class='card answer-card'>{html.escape(answer)}</div>", unsafe_allow_html=True)
+            st.markdown(answer)
 
             # Removed direct sources rendering
         else:
@@ -836,43 +895,15 @@ def render_app() -> None:
             else:
                 body = ai_answer.strip()
 
-            safe_body = html.escape(body).replace("\n", "<br>")
-            st.markdown(f"<div class='card answer-card'>{safe_body}</div>", unsafe_allow_html=True)
+            st.markdown(body)
 
             # Removed AI sources rendering
 
-        # Always show semantic sources in table
-        st.caption("Top sources (semantic ranking):")
+        # Sources leaderboard (based on number of retrieved chunks per document)
+        st.markdown("### TOP SOURCES")
+        render_sources_leaderboard(ranked, sources_ref_map)
 
-        data = []
-        for c, score in ranked[:5]:
-            fuente = c.source_name
-            full_link = name_to_link.get(c.source_name, '')
-            if not (full_link.startswith('http://') or full_link.startswith('https://')):
-                full_link = ''
-            data.append({'Fuente': fuente, 'Link': full_link})
-
-        df = pd.DataFrame(data)
-
-        st.markdown("<style> div[data-testid=\"stDataFrame\"] {font-size: 12px;} </style>", unsafe_allow_html=True)
-
-        st.dataframe(
-            df,
-            width=500,
-            hide_index=True,
-            column_config={
-                "Fuente": st.column_config.TextColumn("Fuente", width="medium"),
-                "Link": st.column_config.LinkColumn(
-                    "Link 🔗",
-                    width=110,
-                    display_text=r"^(?:https?://)?([^/]+)",
-                    max_chars=20,
-                ),
-            },
-        )
-
-        if len(ranked) > 5:
-            st.text("Ver todas")
+        # Removed old semantic sources table and 'Ver todas' per request
 
         # Logging interaction
 
