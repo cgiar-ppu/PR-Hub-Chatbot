@@ -587,7 +587,7 @@ def compose_answer(query: str, ranked: List[Tuple[Chunk, float]], name_to_link: 
         sentences.extend(extra_sentences[: max(0, 3 - len(sentences))])
     sentences = sentences[:6]
     answer = " ".join(sentences).strip()
-    return answer, [f"{name_to_link.get(c.source_name, c.source_name)} — {c.location} — {c.id}" for c, _ in ranked] 
+    return answer, [f"{name_to_link.get(c.source_name, c.source_name)} — {c.location} — {c.id}" for c, _ in ranked]
 
 
 def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10, name_to_link: Dict[str, str] = {}) -> List[str]:
@@ -605,7 +605,7 @@ def format_sources_lines(ranked: List[Tuple[Chunk, float]] , max_items: int = 10
 
 
 def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sentences: int = 5, custom_system_msg: Optional[str] = None, name_to_link: Dict[str, str] = {}) -> Tuple[Optional[str], Optional[str]]:
-    
+
     selected = ranked
     context_blocks: List[str] = []
     for c, _ in selected:
@@ -615,9 +615,9 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
         )
     context = "\n\n---\n\n" + "\n\n---\n\n".join(context_blocks) if context_blocks else ""
 
-    system_msg = custom_system_msg if custom_system_msg is not None else (
-    "You are a helpful assistant that answer user questions in a detailed and comprehensive way."
-)
+    base_msg = custom_system_msg if custom_system_msg is not None else "You are a helpful assistant that answer user questions in a detailed and comprehensive way."
+
+    system_msg = base_msg + "\n\nAlways base your answer strictly on the provided context.\nProvide a detailed and comprehensive answer to the question.\nAfter the answer, add a section 'Used Sources:' followed by a comma-separated list of the IDs from the chunks you used in formulating the answer (e.g., pdf:doc1.pdf:p1pt1, docx:doc2.docx:u1-4). Only list chunks that directly contributed. Do not make up IDs."
 
     user_msg = (
         f"Question: {query}\n\nContext:{context}"
@@ -660,6 +660,16 @@ def call_openai_generate(query: str, ranked: List[Tuple[Chunk, float]], max_sent
         return (None, full_input)
 
     return (None, full_input)
+
+
+def parse_used_sources(ai_answer: str) -> Tuple[str, List[str]]:
+    if 'Used Sources:' not in ai_answer:
+        return ai_answer.strip(), []
+    parts = ai_answer.split('Used Sources:', 1)
+    answer_part = parts[0].strip()
+    sources_str = parts[1].strip()
+    used_ids = [s.strip() for s in sources_str.split(',') if s.strip()]
+    return answer_part, used_ids
 
 
 def dedupe_preserve_order(items: List[str], limit: int = 5) -> List[str]:
@@ -719,42 +729,79 @@ def render_sources_table(lines: List[str]):
     table_html += '</tbody></table>'
     st.markdown(table_html, unsafe_allow_html=True)
 
+def evaluate_top_sources(output: str, ranked: List[Tuple[Chunk, float]]) -> List[str]:
+    if not os.environ.get("OPENAI_API_KEY", "").strip():
+        return []
+
+    context_blocks: List[str] = []
+    for c, _ in ranked:
+        context_blocks.append(f"ID: {c.id}, Source: {c.source_name}, Content: {c.text}")
+    context = "\n\n".join(context_blocks)
+
+    system_msg = "You are an AI evaluator. Given an output answer and chunks with sources, identify the top 3 source documents most crucial to generating the output. Return only the source names in order of relevance, separated by commas. No additional text."
+
+    user_msg = f"Output: {output}\n\nChunks:\n{context}"
+
+    messages = [
+        {"role": "system", "content": system_msg},
+        {"role": "user", "content": user_msg},
+    ]
+
+    try:
+        client = OpenAI()
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0,
+            max_tokens=100,
+        )
+        response = completion.choices[0].message.content.strip()
+        top = [s.strip() for s in response.split(',')][:3]
+        return top
+    except Exception:
+        return []
+
 def load_sources_reference_map(project_root: str) -> Dict[str, Dict[str, str]]:
-    excel_path = os.path.join(project_root, 'reference', 'Sources - P&R Hub.xlsx')
+    
+    excel_path = os.path.join(project_root, 'reference', 'Sources - P&R Hub 1.xlsx')
     if not os.path.exists(excel_path):
         return {}
+    
     try:
-        df = pd.read_excel(excel_path)
+        df = pd.read_excel(excel_path, engine='openpyxl')
     except Exception:
         return {}
-    required = ['NAME DOWNLOAD', 'Document Title', 'P&R Hub reference']
-    for col in required:
-        if col not in df.columns:
-            return {}
+    
     mapping: Dict[str, Dict[str, str]] = {}
     for _, row in df.iterrows():
-        name_download = str(row['NAME DOWNLOAD']).strip()
-        title = str(row['Document Title']).strip() if pd.notna(row['Document Title']) else ''
-        pr_ref = str(row['P&R Hub reference']).strip() if pd.notna(row['P&R Hub reference']) else ''
-        if name_download:
-            mapping[name_download.lower()] = {
-                'title': title if title else name_download,
-                'ref': pr_ref if pr_ref else ''
-            }
+        name_download = str(row.get('NAME DOWNLOAD', '')).lower().strip()
+        if not name_download:
+            continue
+        title = str(row.get('Document Title', name_download)).strip()
+        pr_ref = str(row.get('P&R Hub reference', '')).strip() if pd.notna(row.get('P&R Hub reference')) else ''
+        mapping[name_download] = {
+            'title': title,
+            'ref': pr_ref
+        }
     return mapping
 
-def render_sources_leaderboard(ranked: List[Tuple[Chunk, float]], sources_ref_map: Dict[str, Dict[str, str]]):
-    if not ranked:
-        return
-    counts: Dict[str, int] = {}
-    for c, _ in ranked:
-        key = (c.source_name or '').strip()
-        if not key:
-            continue
-        counts[key] = counts.get(key, 0) + 1
-    if not counts:
-        return
-    ordered = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:10]
+def render_sources_leaderboard(ranked: List[Tuple[Chunk, float]], sources_ref_map: Dict[str, Dict[str, str]], top_sources: Optional[List[str]] = None):
+
+    if top_sources and len(top_sources) > 0:
+        ordered = [(name, 1) for name in top_sources]
+    else:
+        if not ranked:
+            return
+        counts: Dict[str, int] = {}
+        for c, _ in ranked:
+            key = (c.source_name or '').strip()
+            if not key:
+                continue
+            counts[key] = counts.get(key, 0) + 1
+        if not counts:
+            return
+
+        ordered = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:3]  # Limit to top 3
 
     rows: List[Tuple[str, str]] = []
     for name_download, _cnt in ordered:
@@ -873,6 +920,8 @@ def render_app() -> None:
         # Try OpenAI (if API key present) per your rules
         ai_answer, openai_input = call_openai_generate(query, ranked, max_sentences=5, custom_system_msg=st.session_state.get('system_prompt'), name_to_link=name_to_link)
 
+        top_sources = None
+
         # Answer card
         if ai_answer is None or not ai_answer.strip():
             answer, sources_all = compose_answer(query, ranked, name_to_link=name_to_link)
@@ -887,21 +936,20 @@ def render_app() -> None:
 
             st.markdown(answer)
 
-            # Removed direct sources rendering
+            used_for_leaderboard = ranked
+
         else:
-            # For AI answer, only show the body, ignore AI sources
-            if 'Sources:' in ai_answer:
-                body = ai_answer.split('Sources:', 1)[0].strip()
-            else:
-                body = ai_answer.strip()
-
-            st.markdown(body)
-
-            # Removed AI sources rendering
+            answer_part, used_ids = parse_used_sources(ai_answer)
+            used_for_leaderboard = [(c, s) for c, s in ranked if c.id in used_ids]
+            if not used_for_leaderboard:
+                used_for_leaderboard = ranked  # fallback if no sources parsed
+            st.markdown(answer_part)
+            top_sources = evaluate_top_sources(answer_part, ranked)
 
         # Sources leaderboard (based on number of retrieved chunks per document)
         st.markdown("### TOP SOURCES")
-        render_sources_leaderboard(ranked, sources_ref_map)
+        used_list = used_for_leaderboard if 'used_for_leaderboard' in locals() else ranked
+        render_sources_leaderboard(used_list, sources_ref_map, top_sources=top_sources)
 
         # Removed old semantic sources table and 'Ver todas' per request
 
