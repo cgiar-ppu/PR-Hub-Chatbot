@@ -29,166 +29,173 @@ from urllib.parse import urlparse
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 CGIAR_COLORS = {
-    "green_primary": "#427730",      # Corporate Green
-    "green_leaf": "#7AB800",         # Leaf green
-    "green_leaf_dark": "#739600",    # Darker leaf green
-    "blue_bright": "#0065BD",        # Bright Blue
-    "blue_medium": "#0039A6",        # Medium Blue
-    "yellow": "#FDC82F",             # Yellow
-    "orange": "#E37222",             # Orange (amber-ish)
-    "bg": "#F7FAF8",                 # Light soft background
-    "panel": "#FFFFFF",              # Cards
-    "text": "#1A202C",               # Main text
-    "muted": "#4A5568",              # Secondary text
-    "border": "#E2E8F0",             # Subtle borders
+    "primary": "#1F5A48",
+    "hover": "#285f49",
+    "link": "#0B66C3",
+    "sidebar": "#FBF2D2",
+    "bg": "#F7FAF8",
+    "panel": "#FFFFFF",
+    "text": "#1F5A48",
+    "muted": "#4A5568",
+    "border": "#1F5A48",  # Updated
+    "callout": "#f2faf6",
+    "callout-border": "#1F5A48",
+    "separator": "#1F5A48",
 }
 
 def apply_cgiar_theme():
     st.markdown(f"""
-    <style>
-        /* Typography */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+<style>
+    /* Typography */
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap');
 
-        :root {{
-            --brand-primary: {CGIAR_COLORS["green_primary"]};
-            --brand-primary-strong: {CGIAR_COLORS["green_leaf_dark"]};
-            --brand-accent: {CGIAR_COLORS["green_leaf"]};
-            --brand-blue: {CGIAR_COLORS["blue_bright"]};
-            --brand-blue-strong: {CGIAR_COLORS["blue_medium"]};
-            --brand-yellow: {CGIAR_COLORS["yellow"]};
-            --brand-orange: {CGIAR_COLORS["orange"]};
+    :root {{
+        --brand-primary: {CGIAR_COLORS["primary"]};
+        --brand-primary-strong: {CGIAR_COLORS["hover"]};
+        --brand-blue: {CGIAR_COLORS["link"]};
+        --sidebar-bg: {CGIAR_COLORS["sidebar"]};
 
-            --bg: {CGIAR_COLORS["bg"]};
-            --panel: {CGIAR_COLORS["panel"]};
-            --text: {CGIAR_COLORS["text"]};
-            --muted: {CGIAR_COLORS["muted"]};
-            --border: {CGIAR_COLORS["border"]};
-        }}
+        --bg: {CGIAR_COLORS["bg"]};
+        --panel: {CGIAR_COLORS["panel"]};
+        --text: {CGIAR_COLORS["text"]};
+        --muted: {CGIAR_COLORS["muted"]};
+        --border: {CGIAR_COLORS["border"]};
+        --callout: {CGIAR_COLORS["callout"]};
+        --callout-border: {CGIAR_COLORS["callout-border"]};
+        --separator: {CGIAR_COLORS["separator"]};
+    }}
 
-        .stApp {{
-            font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-        }}
-        #MainMenu {{ display: none; }}
-        footer {{ visibility: hidden; }}
+    /* Ensure body font size */
+    .stApp {{
+        font-family: 'Open Sans', sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 16px; /* >=16px */
+    }}
 
-        /* Main container */
-        .main .block-container {{
-            max-width: 1100px;
-            padding-top: 1.25rem;
-        }}
+    /* Titles */
+    h1, h2, h3, h4, h5, h6 {{
+        font-family: 'Montserrat', sans-serif;
+    }}
 
-        /* Hero — solid amber */
-        .brand-hero {{
-            background: var(--brand-orange);
-            color: white;
-            border-radius: 12px;
-            padding: 1.25rem 1.25rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        }}
-        .brand-hero h1 {{
-            margin: 0 0 .25rem 0;
-            font-weight: 700;
-            letter-spacing: .2px;
-        }}
-        .brand-hero p {{
-            margin: 0;
-            opacity: .95;
-        }}
+    /* Sidebar - hide completely */
+    section[data-testid="stSidebar"] {{
+        display: none !important;
+    }}
 
-        /* Cards */
-        .card {{
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 1rem 1.25rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            margin: .75rem 0;
-        }}
-        .answer-card {{
-            border-left: 4px solid var(--brand-primary);
-        }}
+    /* Chat card with green border and text */
+    .chat-card {{
+        background: #FFFFFF;
+        border: 1px solid #1F5A48;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        padding: 1.25rem;
+        margin: 1rem 0;
+        color: #1F5A48;
+    }}
 
-        /* Source chips */
-        .sources-wrap {{
-            display: flex;
-            flex-wrap: wrap;
-            gap: .5rem;
-            margin-top: .5rem;
-        }}
-        .source-chip {{
-            background: #f2f7f3;
-            border: 1px solid #e1efe4;
-            color: #0f3b1f;
-            border-radius: 999px;
-            padding: .35rem .75rem;
-            font-size: .85rem;
-            line-height: 1;
-            white-space: nowrap;
-        }}
+    /* Ensure search bar is green */
+    .stTextInput > div > div > input {{
+        background-color: #1F5A48 !important;
+        color: #FFFFFF !important;
+        border: 1px solid #1F5A48 !important;
+        padding: 0.5rem 1rem;
+    }}
 
-        /* Buttons */
-        .stButton > button {{
-            width: 100%;
-            border: 0;
-            border-radius: 10px;
-            font-weight: 600;
-            padding: .65rem 1rem;
-            transition: transform .08s ease, opacity .15s ease, box-shadow .2s ease;
-            background: var(--brand-primary);
-            color: #fff;
-            box-shadow: 0 2px 6px rgba(66,119,48,.20);
-        }}
-        .stButton > button:hover {{
-            opacity: .95;
-            box-shadow: 0 4px 10px rgba(66,119,48,.25);
-            transform: translateY(-1px);
-        }}
-        .stButton > button:active {{
-            transform: translateY(1px);
-            box-shadow: inset 0 2px 4px rgba(0,0,0,.08);
-        }}
+    .stTextInput > div > div > input::placeholder {{
+        color: rgba(255,255,255,0.7);
+    }}
 
-        /* Inputs */
-        .stTextInput > div > div > input {{
-            border-radius: 10px !important;
-            border: 1px solid var(--border) !important;
-            box-shadow: none !important;
-        }}
-        .stTextInput > div > div > input:focus {{
-            border-color: var(--brand-primary) !important;
-            outline: 3px solid rgba(66,119,48,.15) !important;
-        }}
+    .stTextInput > div > div > input:focus {{
+        border-color: #285f49 !important;
+        box-shadow: 0 0 0 2px rgba(40,95,73,0.2);
+    }}
 
-        /* Slider */
-        .stSlider [data-baseweb="slider"] > div:first-child {{
-            color: var(--brand-primary);
-        }}
+    /* Streamlit header bar */
+    [data-testid="stHeader"] {{
+        background-color: #1F5A48 !important;
+    }}
 
-        /* Subtle alerts */
-        .stAlert {{
-            border-left: 4px solid var(--brand-accent);
-        }}
+    /* Search input hover */
+    .stTextInput > div > div > input:hover {{
+        background-color: #285f49 !important; /* Darker green on hover */
+        border-color: #285f49 !important;
+        box-shadow: 0 0 0 2px rgba(40,95,73,0.2);
+    }}
 
-        /* Compact metrics */
-        .metric-row > div > div {{
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: .75rem;
-        }}
+    /* Override Streamlit button defaults completely */
+    button[kind="primary"] {{
+        background-color: #FFFFFF !important;
+        color: #1F5A48 !important;
+        border: 1px solid #1F5A48 !important;
+        transition: none !important;
+    }}
 
-        /* Footer */
-        .app-footer {{
-            text-align: center;
-            color: var(--muted);
-            font-size: .9rem;
-            margin: 1rem 0 2rem;
-        }}
-    </style>
-    """, unsafe_allow_html=True)
+    button[kind="primary"]:hover {{
+        background-color: #FFFFFF !important;
+        color: #1F5A48 !important;
+        border: 1px solid #1F5A48 !important;
+        box-shadow: none !important;
+    }}
+
+    /* Green callout with full border */
+    .brand-hero {{
+        background: #f2faf6;
+        border: 1px solid #1F5A48;
+        border-radius: 12px;
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+        color: #1F5A48;
+    }}
+
+    /* Top Sources table */
+    .leaderboard thead th {{
+        font-family: 'Montserrat', sans-serif;
+        border-bottom: 2px solid #e8ece8;
+    }}
+
+    .leaderboard tbody tr {{
+        border-top: 1px solid #e8ece8;
+    }}
+
+    /* Accessibility */
+    :focus-visible {{
+        outline: 2px solid #0B66C3;
+    }}
+
+    /* Main container */
+    .main .block-container {{
+        max-width: 1100px;
+        padding-top: 1.25rem;
+    }}
+
+    /* Slider */
+    .stSlider [data-baseweb="slider"] > div:first-child {{
+        color: var(--brand-primary);
+    }}
+
+    /* Subtle alerts */
+    .stAlert {{
+        border-left: 4px solid var(--brand-accent);
+    }}
+
+    /* Compact metrics */
+    .metric-row > div > div {{
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: .75rem;
+    }}
+
+    /* Footer */
+    .app-footer {{
+        text-align: center;
+        color: var(--muted);
+        font-size: .9rem;
+        margin: 1rem 0 2rem;
+    }}
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_resource
 def get_embedding_model() -> SentenceTransformer:
@@ -834,31 +841,31 @@ def render_app() -> None:
     if 'system_prompt' not in st.session_state:
         st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
 
-    # Hero header (solid amber + new title)
+    # Update the top image to a green nature scene, add frame
+    st.markdown('<div style="height: 180px; border-radius: 12px; overflow: hidden; margin-bottom: 1rem; border: 4px solid #1F5A48;"><img src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=1000&q=80" style="width:100%; height:100%; object-fit: cover;"></div>', unsafe_allow_html=True)
+
+    # Add fixed top-left logo
+    st.markdown("""
+    <div style="position: fixed; top: 10px; left: 10px; z-index: 1000;">
+        <img src="https://www.cgiar.org/wp/wp-content/uploads/2019/06/CGIAR_Logo.png" height="28">
+    </div>
+""", unsafe_allow_html=True)
+
+    # Header with mini-logo
     st.markdown("""
         <div class="brand-hero">
             <h1>P&R Hub — Chatbot</h1>
-            <p style="font-size: 0.9rem; text-align: justify;"><strong>PURPOSE: </strong>This ChatBot was developed to support Programs and Accelerators, Centers, and MELIA Focal Points in easily accessing key information related to Planning and Technical Reporting. Its goal is to help users find guidance, tools, and resources that assist in planning, monitoring, and reporting results efficiently.</p>
+            <p style="font-size: 1rem; text-align: justify;"><strong>PURPOSE: </strong>This ChatBot was developed to support Programs and Accelerators, Centers, and MELIA Focal Points in easily accessing key information related to Planning and Technical Reporting. Its goal is to help users find guidance, tools, and resources that assist in planning, monitoring, and reporting results efficiently.</p>
             <p style="margin-bottom: 1rem;"></p>
-            <p style="font-size: 0.9rem; text-align: justify;"><strong>ACKNOWLEDGMENT: </strong>This ChatBot uses Artificial Intelligence (AI) to understand questions and provide automated responses. While the models have been tested to ensure reliable and accurate information, AI-generated answers may occasionally contain errors or inaccuracies. If a response appears incorrect or unclear, please always refer to the official information available on the P&R Hub.</p>
+            <p style="font-size: 1rem; text-align: justify;"><strong>ACKNOWLEDGMENT: </strong>This ChatBot uses Artificial Intelligence (AI) to understand questions and provide automated responses. While the models have been tested to ensure reliable and accurate information, AI-generated answers may occasionally contain errors or inaccuracies. If a response appears incorrect or unclear, please always refer to the official information available on the P&R Hub.</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Sidebar: quick help & example (English, with help icon, and your example)
-    with st.sidebar:
-        st.markdown("### ❓ Quick help")
-        st.write("- Place your **PDF/DOCX/PPTX** in the project folder.")
-        st.write("- Ask a specific question.")
+    # After the hero markdown, add a separator
+    st.markdown("""<hr style="border-top: 9px solid #1F5A48; margin: 1rem 0;">""", unsafe_allow_html=True)
 
-        st.markdown("---")
-        with st.expander("Edit System Prompt"):
-            st.session_state.system_prompt = st.text_area("Customize the system prompt for the AI:", value=st.session_state.system_prompt, height=300)
-
-        force_reindex = st.checkbox(
-            "♻️ Rebuild index (ignore cache)",
-            value=False,
-            help="Ignore the cache and rebuild the index."
-        )
+    # After separator, add back the loading logic
+    force_reindex = False
 
     project_root = os.path.dirname(os.path.abspath(__file__))
     global name_to_link
@@ -909,7 +916,7 @@ def render_app() -> None:
 
     # Search area as a form
     with st.form("ask_form", clear_on_submit=False):
-        query = st.text_input("Type your question:", value="", placeholder="e.g., What is the grievance procedure timeline?")
+        query = st.text_input("Type your question:", value="", placeholder="e.g., what is the timeline for the 2025 reporting?", key="query_input")
         submitted = st.form_submit_button("🔎 Search", use_container_width=True)
 
     if submitted:
@@ -982,9 +989,11 @@ def render_app() -> None:
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
         df_log.to_excel(log_file, index=False)
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # Footer
     st.markdown(
-        "<div class='app-footer'>Prototype · CGIAR-inspired UI · © 2025</div>",
+        "<div class='app-footer'> </div>",
         unsafe_allow_html=True
     )
 
