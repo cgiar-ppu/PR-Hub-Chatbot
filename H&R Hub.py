@@ -33,7 +33,7 @@ CGIAR_COLORS = {
     "hover": "#285f49",
     "link": "#0B66C3",
     "sidebar": "#FBF2D2",
-    "bg": "#F7FAF8",
+    "bg": "#FFFFFF",
     "panel": "#FFFFFF",
     "text": "#1F5A48",
     "muted": "#4A5568",
@@ -77,6 +77,9 @@ def apply_cgiar_theme():
     h1, h2, h3, h4, h5, h6 {{
         font-family: 'Montserrat', sans-serif;
     }}
+    .brand-hero h1 {{
+        font-size: 1.1875rem;
+    }}
 
     /* Sidebar - hide completely */
     section[data-testid="stSidebar"] {{
@@ -113,7 +116,7 @@ def apply_cgiar_theme():
 
     /* Streamlit header bar */
     [data-testid="stHeader"] {{
-        background-color: #1F5A48 !important;
+        background-color: #FFFFFF !important;
     }}
 
     /* Search input hover */
@@ -161,6 +164,19 @@ def apply_cgiar_theme():
     /* Accessibility */
     :focus-visible {{
         outline: 2px solid #0B66C3;
+    }}
+
+    /* Custom spinner styling */
+    .custom-spinner {{
+        width: 50px;
+        height: 50px;
+        border: 8px solid rgba(0, 0, 0, 0.1);
+        border-top-color: #1F5A48;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }}
+    @keyframes spin {{
+        to {{ transform: rotate(360deg); }}
     }}
 
     /* Main container */
@@ -920,6 +936,14 @@ def render_app() -> None:
         submitted = st.form_submit_button("🔎 Search", use_container_width=True)
 
     if submitted:
+        loading_placeholder = st.empty()
+        loading_placeholder.markdown("""
+        <div style="display: flex; align-items: center; justify-content: center; margin: 1rem 0;">
+            <div class="custom-spinner"></div>
+            <span style="margin-left: 10px; color: #1F5A48; font-weight: bold;">In progress...</span>
+        </div>
+        """, unsafe_allow_html=True)
+
         top_k = 200
         model = get_embedding_model()
         ranked = rank_chunks(query, model, embeddings, chunks, top_k=top_k)
@@ -988,6 +1012,8 @@ def render_app() -> None:
 
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
         df_log.to_excel(log_file, index=False)
+
+        loading_placeholder.empty()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
