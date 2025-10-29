@@ -938,6 +938,19 @@ def render_app() -> None:
     if submitted:
         loading_placeholder = st.empty()
         loading_placeholder.markdown("""
+        <style>
+            .custom-spinner {{
+                width: 50px;
+                height: 50px;
+                border: 8px solid rgba(0, 0, 0, 0.1) !important;
+                border-top-color: #1F5A48 !important;
+                border-radius: 50% !important;
+                animation: spin 1s linear infinite !important;
+            }}
+            @keyframes spin {{
+                to {{ transform: rotate(360deg); }}
+            }}
+        </style>
         <div style="display: flex; align-items: center; justify-content: center; margin: 1rem 0;">
             <div class="custom-spinner"></div>
             <span style="margin-left: 10px; color: #1F5A48; font-weight: bold;">In progress...</span>
