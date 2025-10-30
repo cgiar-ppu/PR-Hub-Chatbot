@@ -420,43 +420,21 @@ def create_overlapped_chunks(unit_texts: List[str], unit_locations: List[str], b
     return chunks
 
 
-def load_corpus(root_dir: str,
-                hide_failures: bool = True,
-                exclude_patterns: Optional[List[str]] = None) -> List[Chunk]:
-    """
-    Recorre root_dir y subcarpetas, carga solo .pdf/.docx/.pptx.
-    Muestra únicamente los archivos cargados con éxito (por defecto).
-    Puedes excluir archivos por patrón (p.ej., ['^default\\.', '^\\._', '^~\\$']).
-    """
+def load_corpus(root_dir: str) -> List[Chunk]:
     supported_ext = {".pdf", ".docx", ".pptx"}
-    exclude_patterns = exclude_patterns or []
-    compiled_excludes = [re.compile(pat, re.IGNORECASE) for pat in exclude_patterns]
-
     chunks: List[Chunk] = []
-    ok_files: List[Tuple[str, int]] = []   # (nombre, n_chunks)
-    bad_files: List[str] = []
-
     for dirpath, _, filenames in os.walk(root_dir):
         for fname in filenames:
-            # Excluir por patrón (ej.: default.*, archivos ocultos de macOS, backups temporales)
-            if any(p.match(fname) for p in compiled_excludes):
-                continue
-
             ext = os.path.splitext(fname)[1].lower()
             if ext not in supported_ext:
                 continue
-
             abspath = os.path.join(dirpath, fname)
-            # Excluir archivos vacíos
             try:
                 if os.path.getsize(abspath) == 0:
-                    bad_files.append(fname)
                     continue
             except Exception:
-                bad_files.append(fname)
                 continue
-
-            new_chunks: List[Chunk] = []
+            new_chunks = []
             try:
                 if ext == ".pdf":
                     new_chunks = read_pdf_chunks(abspath)
@@ -465,25 +443,8 @@ def load_corpus(root_dir: str,
                 elif ext == ".pptx":
                     new_chunks = read_pptx_chunks(abspath)
             except Exception:
-                new_chunks = []
-
-            if new_chunks:
-                chunks.extend(new_chunks)
-                ok_files.append((fname, len(new_chunks)))
-            else:
-                bad_files.append(fname)
-
-    # Panel de “detalles de procesamiento”
-    with st.expander("🔍 View document processing details", expanded=False):
-        st.write("### ✅ Loaded files:")
-        for fname, n in ok_files:
-            st.write(f"✅ {fname} ({n} chunks)")
-        st.write(f"\n**Summary:** {len(ok_files)} loaded")
-        if not hide_failures and bad_files:
-            st.write("### ❌ Skipped/failed files:")
-            for fname in bad_files:
-                st.write(f"❌ {fname}")
-
+                continue
+            chunks.extend(new_chunks)
     return chunks
 
 
@@ -499,19 +460,6 @@ def build_embeddings_index(chunks: List[Chunk]) -> np.ndarray:
     with st.spinner("Building semantic embeddings..."):
         embs = model.encode(texts, show_progress_bar=True, device=device, normalize_embeddings=False)
     return np.asarray(embs, dtype=np.float32)
-
-def get_corpus_hash(root_dir: str) -> str:
-    hash_str = ''
-    supported_ext = {".pdf", ".docx", ".pptx"}
-    for dirpath, _, filenames in os.walk(root_dir):
-        for fname in sorted(filenames):
-            if os.path.splitext(fname)[1].lower() not in supported_ext:
-                continue
-            abspath = os.path.join(dirpath, fname)
-            mtime = os.path.getmtime(abspath)
-            size = os.path.getsize(abspath)
-            hash_str += f"{abspath}:{mtime}:{size}\n"
-    return hashlib.sha256(hash_str.encode()).hexdigest()
 
 def rank_chunks(query: str, model: SentenceTransformer, embeddings: np.ndarray, chunks: List[Chunk], top_k: int = 25) -> List[Tuple[Chunk, float]]:
     if not query.strip() or embeddings.shape[0] == 0:
@@ -887,48 +835,39 @@ def render_app() -> None:
     global name_to_link
     name_to_link = load_name_to_link(project_root)
     sources_ref_map = load_sources_reference_map(project_root)
-    chunks_file = os.path.join(project_root, 'chunks.xlsx')
-    index_file  = os.path.join(project_root, 'index.pkl')
-    hash_file   = os.path.join(project_root, 'corpus_hash.txt')
+    index_file = os.path.join(project_root, 'index.pkl')
 
-    current_hash = get_corpus_hash(project_root)
+    chunks = []
+    embeddings = None
+    regenerate = True
 
-    load_from_cache = False
-    if (not force_reindex) and all(os.path.exists(p) for p in [hash_file, chunks_file, index_file]):
-        with open(hash_file, 'r') as f:
-            saved_hash = f.read().strip()
-        if saved_hash == current_hash:
-            load_from_cache = True
-
-    embeddings: np.ndarray
-    if load_from_cache:
+    if os.path.exists(index_file):
         with st.spinner("Loading from cache..."):
-            df = pd.read_excel(chunks_file)
-            chunks = [Chunk(**row) for row in df.to_dict(orient='records')]
-            with open(index_file, 'rb') as f:
-                data = pickle.load(f)
-            if isinstance(data, dict) and 'embeddings' in data:
-                embeddings = np.asarray(data['embeddings'])
-            else:
-                load_from_cache = False
-    if not load_from_cache:
-        with st.spinner("Loading documents..."):
+            try:
+                with open(index_file, 'rb') as f:
+                    data = pickle.load(f)
+                if 'chunks' in data and 'embeddings' in data:
+                    chunks = data['chunks']
+                    embeddings = np.asarray(data['embeddings'])
+                    if len(chunks) > 0 and embeddings.shape[0] == len(chunks):
+                        regenerate = False
+            except Exception:
+                pass
+
+    if regenerate:
+        with st.spinner("Loading documents and building index..."):
             chunks = load_corpus(project_root)
-        df = pd.DataFrame([asdict(c) for c in chunks])
-        df.to_excel(chunks_file, index=False)
-        embeddings = build_embeddings_index(chunks)
-        with open(index_file, 'wb') as f:
-            pickle.dump({'embeddings': embeddings}, f)
-        with open(hash_file, 'w') as f:
-            f.write(current_hash)
+            embeddings = build_embeddings_index(chunks)
+            with open(index_file, 'wb') as f:
+                pickle.dump({'chunks': chunks, 'embeddings': embeddings}, f)
 
-        num_chunks = len(chunks)
+    num_chunks = len(chunks)
 
-        if num_chunks == 0:
-            st.warning(
-                "No compatible documents (.pdf, .docx, .pptx) were found in the project. "
-                "Add files to the existing folders and reload."
-            )
+    if num_chunks == 0:
+        st.warning(
+            "No compatible documents (.pdf, .docx, .pptx) were found in the project. "
+            "Add files to the existing folders and reload."
+        )
 
     # Search area as a form
     with st.form("ask_form", clear_on_submit=False):
