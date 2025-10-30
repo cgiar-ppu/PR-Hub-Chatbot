@@ -871,7 +871,7 @@ def render_app() -> None:
     st.markdown("""
         <div class="brand-hero">
             <h1>P&R Hub — Chatbot</h1>
-            <p style="font-size: 1rem; text-align: justify;"><strong>PURPOSE: </strong>This ChatBot was developed to support Programs and Accelerators, Centers, and MELIA Focal Points in easily accessing key information related to Planning, MELIA, and Technical Reporting. Its goal is to help users find guidance, tools, and resources that assist in planning, monitoring, and reporting results efficiently.</p>
+            <p style="font-size: 1rem; text-align: justify;"><strong>PURPOSE: </strong>This ChatBot was developed to support Programs and Accelerators, Centers, and MELIA Focal Points in easily accessing key information related to Planning and Technical Reporting. Its goal is to help users find guidance, tools, and resources that assist in planning, monitoring, and reporting results efficiently.</p>
             <p style="margin-bottom: 1rem;"></p>
             <p style="font-size: 1rem; text-align: justify;"><strong>ACKNOWLEDGMENT: </strong>This ChatBot uses Artificial Intelligence (AI) to understand questions and provide automated responses. While the models have been tested to ensure reliable and accurate information, AI-generated answers may occasionally contain errors or inaccuracies. If a response appears incorrect or unclear, please always refer to the official information available on the P&R Hub.</p>
         </div>
@@ -938,24 +938,35 @@ def render_app() -> None:
     if submitted:
         loading_placeholder = st.empty()
         loading_placeholder.markdown("""
-        <style>
-            .custom-spinner {{
-                width: 50px;
-                height: 50px;
-                border: 8px solid rgba(0, 0, 0, 0.1) !important;
-                border-top-color: #1F5A48 !important;
-                border-radius: 50% !important;
-                animation: spin 1s linear infinite !important;
-            }}
-            @keyframes spin {{
-                to {{ transform: rotate(360deg); }}
-            }}
-        </style>
-        <div style="display: flex; align-items: center; justify-content: center; margin: 1rem 0;">
-            <div class="custom-spinner"></div>
-            <span style="margin-left: 10px; color: #1F5A48; font-weight: bold;">In progress...</span>
-        </div>
-        """, unsafe_allow_html=True)
+<style>
+    @keyframes spinner-rotation {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    @-webkit-keyframes spinner-rotation {
+        0% { -webkit-transform: rotate(0deg); }
+        100% { -webkit-transform: rotate(360deg); }
+    }
+    .loading-spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid #1F5A48;
+        border-radius: 50%;
+        border-top-color: transparent;
+        border-right-color: transparent;
+        animation: spinner-rotation 1s linear infinite;
+        -webkit-animation: spinner-rotation 1s linear infinite;
+        vertical-align: middle;
+        margin-right: 8px;
+    }
+</style>
+<div style="display: flex; align-items: center; justify-content: center; margin: 1rem 0;">
+    <span style="color: #1F5A48; font-weight: bold; font-size: 1.1rem;">
+        <span class="loading-spinner"></span>In progress…
+    </span>
+</div>
+""", unsafe_allow_html=True)
 
         top_k = 200
         model = get_embedding_model()
@@ -1032,7 +1043,7 @@ def render_app() -> None:
 
     # Footer
     st.markdown(
-        "<div class='app-footer'> </div>",
+        """<div class='app-footer'>If we were unable to answer your question or you require further information, please contact us at: <a href='mailto:performanceandresults@cgiar.org'>performanceandresults@cgiar.org</a></div>""",
         unsafe_allow_html=True
     )
 
